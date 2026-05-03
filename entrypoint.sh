@@ -127,6 +127,11 @@ if [ ! -f "$CONFIG_DIR/webdav.passwords" ]; then
     touch "$CONFIG_DIR/webdav.passwords"
 fi
 
+# --- Default service states (FTP off by default) ---
+if [ ! -f "$CONFIG_DIR/services.json" ]; then
+    echo '{"smb":true,"nfs":true,"ftp":false,"sftp":true,"webdav":true}' > "$CONFIG_DIR/services.json"
+fi
+
 # Init empty apache-shares.conf so Include doesn't fail on first boot
 [ -f "$CONFIG_DIR/apache-shares.conf" ] || touch "$CONFIG_DIR/apache-shares.conf"
 

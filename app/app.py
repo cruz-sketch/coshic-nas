@@ -84,14 +84,22 @@ SERVICE_PROGRAMS = {
 }
 
 
+_DEFAULT_SERVICE_STATES = {
+    'smb':    True,
+    'nfs':    True,
+    'ftp':    False,
+    'sftp':   True,
+    'webdav': True,
+}
+
 def _get_service_states():
     try:
         with open(_SERVICES_FILE) as f:
             states = json.load(f)
     except Exception:
         states = {}
-    for k in SERVICE_PROGRAMS:
-        states.setdefault(k, True)
+    for k, default in _DEFAULT_SERVICE_STATES.items():
+        states.setdefault(k, default)
     return states
 
 
