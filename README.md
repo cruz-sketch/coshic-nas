@@ -2,6 +2,8 @@
 
 A self-hosted NAS server running in Docker with a web-based management UI. Supports multiple file-sharing protocols, user access control, and macOS Time Machine backups.
 
+<img width="1600" height="847" alt="screenshot" src="https://github.com/user-attachments/assets/117a4b1a-f75e-429a-8b21-8f4cb6285e8c" />
+
 
 ## Features
 
