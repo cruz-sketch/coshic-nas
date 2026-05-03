@@ -2,7 +2,6 @@
 
 A self-hosted NAS server running in Docker with a web-based management UI. Supports multiple file-sharing protocols, user access control, and macOS Time Machine backups.
 
-**→ [github.com/cruz-sketch/coshic-nas](https://github.com/cruz-sketch/coshic-nas)**
 
 ## Features
 
