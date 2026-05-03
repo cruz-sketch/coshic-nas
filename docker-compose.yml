@@ -1,0 +1,53 @@
+services:
+  nas:
+    build: .
+    container_name: coshic-nas
+    restart: unless-stopped
+    stop_grace_period: 30s
+    privileged: true   # required for NFS kernel server
+    ports:
+      - "8080:8080"         # Web UI
+      - "21:21"             # FTP control
+      - "20:20"             # FTP data
+      - "2222:22"           # SFTP/SSH
+      - "139:139"           # SMB legacy
+      - "445:445"           # SMB - required for Time Machine and modern macOS SMB clients
+                            # On Windows host: run "sc stop lanmanserver" first if port 445 is busy
+      - "111:111"           # rpcbind (portmapper) - required for NFSv3
+      - "2049:2049"         # NFS
+      - "20048:20048"       # NFS mountd (fixed port)
+      - "80:80"             # WebDAV (HTTP)
+      - "443:443"           # WebDAV (HTTPS)
+      - "21100-21110:21100-21110"  # FTP passive
+      - "5353:5353/udp"           # mDNS/Bonjour - Time Machine auto-discovery
+                                  # NOTE: mDNS is multicast and may not cross Docker bridge.
+                                  # For full auto-discovery add to compose: network_mode: host
+    volumes:
+      - nas_data:/data/shares
+      - nas_config:/data/config
+      - nas_homes:/data/homes
+    environment:
+      TZ: Europe/Kyiv
+      # Web UI admin password - default is "admin".
+      # Change it via the Settings page in the Web UI, or set here before first run.
+      # LOGIN_PASSWORD: "admin"
+      #
+      # Your server's LAN IP. Required for FTP passive mode (Docker bridge networking cannot
+      # auto-detect the host IP from inside the container). Also shown in Connection Info in the UI.
+      # NAS_HOST: "192.168.1.100"
+      #
+      # Seed users on first startup. Format: "username:password[:ro]", separated by " | "
+      # Existing users are skipped on subsequent restarts.
+      # NAS_USERS: "alice:secret | bob:pass:ro"
+      #
+      # Seed shares on first startup. Format: "name[:protocols[:flags[:users]]]", separated by " | "
+      #   protocols - comma-separated: smb,nfs,ftp,sftp,webdav  (default: smb)
+      #   flags     - comma-separated: public,timemachine,no-aio,sync-writes
+      #   users     - comma-separated: username (rw) or username=ro
+      # Existing shares are skipped on subsequent restarts.
+      # NAS_SHARES: "movies:smb,ftp:public | documents:smb,nfs::alice,bob=ro | backups:smb:timemachine:alice"
+
+volumes:
+  nas_data:
+  nas_config:
+  nas_homes:

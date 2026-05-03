@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Coshic NAS - Sign in</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css"/>
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.css"/>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body class="login-body">
+
+<div class="login-wrap">
+  <div class="login-card">
+
+    <div class="login-logo">
+      <i class="bi bi-hdd-network-fill"></i>
+      <span>Coshic NAS</span>
+    </div>
+
+    <p class="login-sub">Enter the admin password to continue</p>
+
+    {% if error %}
+    <div class="alert alert-danger py-2 px-3 mb-3 small">
+      <i class="bi bi-exclamation-circle me-1"></i>{{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post">
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Password</label>
+        <div class="input-group">
+          <input type="password" name="password" id="pwdField"
+                 class="form-control form-control-lg"
+                 autofocus autocomplete="current-password" required
+                 placeholder="••••••••">
+          <button type="button" class="btn btn-outline-secondary" onclick="togglePwd()">
+            <i class="bi bi-eye" id="eyeIco"></i>
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary w-100 btn-lg">
+        <i class="bi bi-box-arrow-in-right me-2"></i>Sign in
+      </button>
+    </form>
+
+  </div>
+</div>
+
+<script>
+function togglePwd() {
+  const f = document.getElementById('pwdField');
+  const i = document.getElementById('eyeIco');
+  f.type = f.type === 'password' ? 'text' : 'password';
+  i.className = f.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+}
+</script>
+</body>
+</html>

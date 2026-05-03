@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %} - {{ 'Edit' if user else 'New' }} User{% endblock %}
+{% block page_title %}{{ 'Edit user: ' + user.username if user else 'New User' }}{% endblock %}
+
+{% block header_actions %}
+<a href="{{ url_for('users') }}" class="btn btn-sm btn-outline-secondary">
+  <i class="bi bi-arrow-left me-1"></i>Back
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-md-5">
+
+<form method="post">
+<div class="card">
+  <div class="card-header">Account Details</div>
+  <div class="card-body">
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">
+        Username <span class="text-danger">*</span>
+      </label>
+      {% if user %}
+      <input type="text" class="form-control" value="{{ user.username }}" readonly disabled>
+      <input type="hidden" name="username" value="{{ user.username }}">
+      {% else %}
+      <input type="text" name="username" class="form-control" required
+             pattern="[a-z][a-z0-9_\-]*" placeholder="e.g. alice"
+             autocomplete="username">
+      {% endif %}
+      <div class="form-text">
+        Lowercase, starts with a letter. Used for all protocols (SMB, FTP, SFTP, WebDAV).
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">
+        Password
+        {% if user %}<span class="text-muted fw-normal">(leave blank to keep current)</span>{% else %}<span class="text-danger">*</span>{% endif %}
+      </label>
+      <div class="input-group">
+        <input type="password" name="password" class="form-control"
+               id="pwdInput"
+               {{ 'required' if not user }}
+               autocomplete="new-password" placeholder="••••••••">
+        <button type="button" class="btn btn-outline-secondary" onclick="togglePwd()">
+          <i class="bi bi-eye" id="eyeIcon"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="form-check form-switch mt-3">
+      <input class="form-check-input" type="checkbox" name="readonly"
+             id="readonlySwitch" {{ 'checked' if user and user.readonly }}>
+      <label class="form-check-label" for="readonlySwitch">
+        <strong>Read-only account</strong>
+        <div class="text-muted small">
+          Cannot write via SMB, FTP, or SFTP on any share
+        </div>
+      </label>
+    </div>
+
+    {% if user %}
+    <div class="form-check form-switch mt-3">
+      <input class="form-check-input" type="checkbox" name="enabled"
+             id="enabledSwitch" {{ 'checked' if user.enabled }}>
+      <label class="form-check-label" for="enabledSwitch">
+        <strong>Account enabled</strong>
+        <div class="text-muted small">Disabling prevents login on all protocols</div>
+      </label>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <div class="card-footer d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-check-lg me-1"></i>{{ 'Save Changes' if user else 'Create User' }}
+    </button>
+    <a href="{{ url_for('users') }}" class="btn btn-outline-secondary">Cancel</a>
+  </div>
+</div>
+</form>
+
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePwd() {
+  const inp = document.getElementById('pwdInput');
+  const ico = document.getElementById('eyeIcon');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    ico.className = 'bi bi-eye-slash';
+  } else {
+    inp.type = 'password';
+    ico.className = 'bi bi-eye';
+  }
+}
+</script>
+{% endblock %}

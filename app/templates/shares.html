@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+{% block title %} - Shared Folders{% endblock %}
+{% block page_title %}Shared Folders{% endblock %}
+
+{% block header_actions %}
+<a href="{{ url_for('share_new') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg me-1"></i>Add Share
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">All Shares ({{ shares|length }})</div>
+
+  {% if shares %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th class="ps-4">Name</th>
+          <th>Path</th>
+          <th>Protocols</th>
+          <th>Access</th>
+          <th class="text-end pe-4">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in shares %}
+        {% set protos = s.protocols | from_json %}
+        <tr class="share-row" style="cursor:pointer"
+            data-name="{{ s.name }}" data-path="{{ s.path }}" data-protos="{{ s.protocols }}">
+          <td class="ps-4">
+            <div class="fw-semibold">{{ s.name }}</div>
+            {% if s.comment %}<div class="text-muted small">{{ s.comment }}</div>{% endif %}
+          </td>
+          <td><code class="text-muted small">{{ s.path }}</code></td>
+          <td>
+            {% for p in protos %}
+            {% set pbg = {
+              'smb':'primary', 'nfs':'warning text-dark',
+              'ftp':'info text-dark', 'sftp':'success', 'webdav':'secondary'
+            }.get(p, 'light text-dark') %}
+            <span class="badge bg-{{ pbg }} me-1" style="font-size:11px">{{ p.upper() }}</span>
+            {% else %}
+            <span class="text-muted small">-</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if s.public %}
+            <span class="badge bg-warning text-dark"><i class="bi bi-globe me-1"></i>Public</span>
+            {% else %}
+            <span class="badge bg-secondary"><i class="bi bi-lock me-1"></i>Private</span>
+            {% endif %}
+          </td>
+          <td class="text-end pe-4">
+            <button type="button" class="btn btn-sm btn-outline-secondary me-1" title="Connection paths">
+              <i class="bi bi-link-45deg"></i>
+            </button>
+            <a href="{{ url_for('share_edit', sid=s.id) }}"
+               class="btn btn-sm btn-outline-primary me-1" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="post" action="{{ url_for('share_delete', sid=s.id) }}"
+                  class="d-inline"
+                  onsubmit="return confirm('Delete share «{{ s.name }}»?')">
+              <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-folder-x" style="font-size:48px;opacity:.4"></i>
+    <div class="mt-3 fw-semibold">No shares configured yet</div>
+    <div class="small mb-3">Add your first share to start serving files.</div>
+    <a href="{{ url_for('share_new') }}" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>Add First Share
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Connection paths modal ── #}
+<div class="modal fade" id="pathsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-link-45deg me-2 text-primary"></i>Connection Paths
+          - <span id="pmShareName" class="fw-bold"></span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body px-4 py-3" id="pmBody"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _NAS_HOST     = {{ nas_host | tojson }};
+const _NAS_SSH_PORT = {{ nas_ssh_port | tojson }};
+
+let _modalPaths = [];
+
+function openPathsModal(name, path, protos) {
+  const host = _NAS_HOST || window.location.hostname;
+
+  document.getElementById('pmShareName').textContent = name;
+
+  _modalPaths = [];
+
+  if (protos.includes('smb')) {
+    _modalPaths.push({ label: 'SMB - macOS / Linux', path: `smb://${host}/${name}`,          icon: 'bi-display',        color: '#4f6ef7' });
+    _modalPaths.push({ label: 'SMB - Windows',       path: `\\\\${host}\\${name}`,       icon: 'bi-pc-display',     color: '#4f6ef7' });
+  }
+  if (protos.includes('nfs')) {
+    _modalPaths.push({ label: 'NFS (URL)',   path: `nfs://${host}${path}`,                icon: 'bi-diagram-3-fill', color: '#f59e0b' });
+    _modalPaths.push({ label: 'NFS (mount)', path: `mount -t nfs ${host}:${path} /mnt/${name}`, icon: 'bi-terminal-fill', color: '#f59e0b' });
+  }
+  if (protos.includes('ftp'))
+    _modalPaths.push({ label: 'FTP',  path: `ftp://${host}`,                              icon: 'bi-cloud-arrow-up-fill', color: '#06b6d4' });
+  if (protos.includes('sftp'))
+    _modalPaths.push({ label: 'SFTP', path: `sftp://user@${host}:${_NAS_SSH_PORT}/${name}`, icon: 'bi-shield-lock-fill', color: '#22c55e' });
+  if (protos.includes('webdav')) {
+    _modalPaths.push({ label: 'WebDAV (HTTP)',  path: `http://${host}/${name}`,            icon: 'bi-globe2', color: '#a78bfa' });
+    _modalPaths.push({ label: 'WebDAV (HTTPS)', path: `https://${host}/${name}`,           icon: 'bi-globe2', color: '#a78bfa' });
+  }
+
+  const body = document.getElementById('pmBody');
+
+  if (_modalPaths.length === 0) {
+    body.innerHTML = '<p class="text-muted text-center py-3 mb-0">No protocols enabled for this share.</p>';
+  } else {
+    body.innerHTML = _modalPaths.map((item, idx) => `
+      <div class="path-row${idx === _modalPaths.length - 1 ? ' path-row-last' : ''}">
+        <div class="path-label">
+          <i class="bi ${item.icon}" style="color:${item.color}"></i>
+          <span>${item.label}</span>
+        </div>
+        <div class="path-value-wrap">
+          <code class="path-value" id="pv${idx}"></code>
+          <button class="btn btn-sm btn-outline-secondary copy-btn" data-idx="${idx}" title="Copy">
+            <i class="bi bi-copy"></i>
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+    _modalPaths.forEach((item, idx) => {
+      document.getElementById(`pv${idx}`).textContent = item.path;
+    });
+
+    body.querySelectorAll('.copy-btn').forEach(btn => {
+      btn.addEventListener('click', function () {
+        const idx  = parseInt(this.dataset.idx);
+        const text = _modalPaths[idx].path;
+        const icon = this.querySelector('i');
+        const done = () => {
+          icon.className = 'bi bi-check-lg text-success';
+          setTimeout(() => { icon.className = 'bi bi-copy'; }, 1600);
+        };
+        // Textarea must be inside the modal - Bootstrap's focus trap blocks
+        // focus() on elements outside it, which breaks execCommand('copy').
+        const syncCopy = () => {
+          const el = document.createElement('textarea');
+          el.value = text;
+          el.style.cssText = 'position:absolute;opacity:0;pointer-events:none;width:1px;height:1px';
+          document.getElementById('pmBody').appendChild(el);
+          el.focus(); el.select();
+          document.execCommand('copy');
+          el.remove(); done();
+        };
+        window.isSecureContext && navigator.clipboard
+          ? navigator.clipboard.writeText(text).then(done).catch(syncCopy)
+          : syncCopy();
+      });
+    });
+  }
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('pathsModal')).show();
+}
+
+// Open modal on row click; skip clicks on edit link and delete form
+document.querySelectorAll('.share-row').forEach(tr => {
+  tr.addEventListener('click', e => {
+    if (e.target.closest('a[href], form')) return;
+    openPathsModal(tr.dataset.name, tr.dataset.path, JSON.parse(tr.dataset.protos || '[]'));
+  });
+});
+</script>
+{% endblock %}
