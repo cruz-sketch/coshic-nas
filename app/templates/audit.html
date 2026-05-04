@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %} - Audit log{% endblock %}
+{% block page_title %}Audit log{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div>
+      <span class="fw-semibold">Recent activity</span>
+      <span class="text-muted small ms-2">{{ total }} entries</span>
+    </div>
+    <form method="get" class="d-flex gap-2 align-items-center">
+      <label class="small text-muted mb-0" for="auditFilter">Filter:</label>
+      <select id="auditFilter" name="filter" class="form-select form-select-sm"
+              onchange="this.form.submit()" style="width:auto">
+        <option value="" {% if not filt %}selected{% endif %}>All actions</option>
+        {% for f in filters %}
+        <option value="{{ f }}" {% if filt == f %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if rows %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th class="ps-4" style="white-space:nowrap">When (UTC)</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Details</th>
+          <th class="pe-4">From</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="ps-4 text-muted small" style="white-space:nowrap">{{ r.ts[:19] if r.ts else '' }}</td>
+          <td><span class="badge bg-light text-dark border">{{ r.actor }}</span></td>
+          <td>
+            {% set kind = (r.action or '').split('.', 1)[0] %}
+            {% set sev  = 'success' if r.action == 'login.success'
+                          else 'danger' if r.action in ('login.fail','user.delete','share.delete')
+                          else 'warning' if kind == 'admin' or kind == 'ssl'
+                          else 'primary' if kind in ('user','share')
+                          else 'info' if kind == 'service'
+                          else 'secondary' %}
+            <span class="badge bg-{{ sev }}-subtle text-{{ sev }} border border-{{ sev }}-subtle">
+              {{ r.action }}
+            </span>
+          </td>
+          <td class="fw-semibold">{{ r.target }}</td>
+          <td class="text-muted small" style="max-width:340px;word-break:break-all">{{ r.details }}</td>
+          <td class="pe-4 text-muted small" style="white-space:nowrap">{{ r.remote_addr }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if pages > 1 %}
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <div class="small text-muted">Page {{ page }} of {{ pages }}</div>
+    <div class="btn-group btn-group-sm">
+      <a class="btn btn-outline-secondary {% if page <= 1 %}disabled{% endif %}"
+         href="?page={{ page - 1 }}{% if filt %}&filter={{ filt }}{% endif %}">
+        <i class="bi bi-chevron-left"></i> Previous
+      </a>
+      <a class="btn btn-outline-secondary {% if page >= pages %}disabled{% endif %}"
+         href="?page={{ page + 1 }}{% if filt %}&filter={{ filt }}{% endif %}">
+        Next <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-journal-text" style="font-size:48px;opacity:.4"></i>
+    <div class="mt-3 fw-semibold">No audit entries yet</div>
+    <div class="small">Actions like creating users or shares will appear here.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card mt-4">
+  <div class="card-body small text-muted">
+    <i class="bi bi-info-circle me-1"></i>
+    The audit log keeps the last <strong>{{ 10000 }}</strong> entries (oldest are
+    pruned automatically). Stored in the same SQLite database as users and shares.
+  </div>
+</div>
+{% endblock %}

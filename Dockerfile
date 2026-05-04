@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y \
     util-linux \
     iproute2 \
     curl \
+    logrotate \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -77,9 +78,13 @@ COPY supervisord.conf /etc/supervisor/conf.d/nas.conf
 COPY apache-webdav.conf /etc/apache2/sites-available/nas-webdav.conf
 COPY scripts/run-nfs.sh /usr/local/bin/run-nfs.sh
 COPY scripts/apply-services.sh /usr/local/bin/apply-services.sh
+COPY scripts/run-logrotate.sh /usr/local/bin/run-logrotate.sh
+COPY scripts/logrotate-coshic.conf /etc/logrotate.d/coshic.conf
 COPY entrypoint.sh /entrypoint.sh
 
-RUN chmod +x /entrypoint.sh /usr/local/bin/run-nfs.sh /usr/local/bin/apply-services.sh
+RUN chmod +x /entrypoint.sh /usr/local/bin/run-nfs.sh \
+             /usr/local/bin/apply-services.sh \
+             /usr/local/bin/run-logrotate.sh
 
 RUN mkdir -p /data/shares /data/config /data/homes \
     /var/run/samba /var/log/samba \

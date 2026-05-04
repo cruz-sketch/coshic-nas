@@ -45,6 +45,18 @@ class Database:
                     readonly   INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    actor       TEXT NOT NULL,
+                    action      TEXT NOT NULL,
+                    target      TEXT DEFAULT '',
+                    details     TEXT DEFAULT '',
+                    remote_addr TEXT DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_audit_log_ts     ON audit_log(ts);
+                CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
             ''')
             # migrations for existing DBs (silently skip if column already exists)
             for migration in (
@@ -133,3 +145,52 @@ class Database:
             shares = c.execute('SELECT COUNT(*) FROM shares').fetchone()[0]
             users  = c.execute('SELECT COUNT(*) FROM users').fetchone()[0]
         return {'shares': shares, 'users': users}
+
+    # ---- Audit log ----
+
+    # Hard cap on retained rows. Pruned on every insert (cheap with the index).
+    AUDIT_MAX_ROWS = 10000
+
+    def log_audit(self, actor, action, target='', details='', remote_addr=''):
+        """Append a row. `details` may be a dict/list - it's JSON-encoded."""
+        if isinstance(details, (dict, list)):
+            details = json.dumps(details, separators=(',', ':'), ensure_ascii=False)
+        actor       = (actor       or '')[:64]
+        action      = (action      or '')[:64]
+        target      = (target      or '')[:128]
+        details     = (details     or '')[:512]
+        remote_addr = (remote_addr or '')[:64]
+        with self._conn() as c:
+            c.execute(
+                'INSERT INTO audit_log (actor, action, target, details, remote_addr) '
+                'VALUES (?, ?, ?, ?, ?)',
+                (actor, action, target, details, remote_addr)
+            )
+            # Trim oldest rows beyond the cap. SQLite supports DELETE ... WHERE
+            # id IN (subquery), so this is a single statement.
+            c.execute(
+                'DELETE FROM audit_log WHERE id IN ('
+                '  SELECT id FROM audit_log ORDER BY id DESC LIMIT -1 OFFSET ?'
+                ')',
+                (self.AUDIT_MAX_ROWS,)
+            )
+
+    def get_audit_log(self, limit=100, offset=0, action_prefix=None):
+        sql = 'SELECT * FROM audit_log'
+        args = []
+        if action_prefix:
+            sql += ' WHERE action LIKE ?'
+            args.append(action_prefix + '%')
+        sql += ' ORDER BY id DESC LIMIT ? OFFSET ?'
+        args.extend([int(limit), int(offset)])
+        with self._conn() as c:
+            return [dict(r) for r in c.execute(sql, args)]
+
+    def count_audit_log(self, action_prefix=None):
+        sql = 'SELECT COUNT(*) FROM audit_log'
+        args = []
+        if action_prefix:
+            sql += ' WHERE action LIKE ?'
+            args.append(action_prefix + '%')
+        with self._conn() as c:
+            return c.execute(sql, args).fetchone()[0]

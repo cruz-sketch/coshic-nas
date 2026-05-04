@@ -159,6 +159,21 @@ def _is_admin_default():
     return os.environ.get('LOGIN_PASSWORD', 'admin') == 'admin'
 
 
+def _audit(action, target='', details='', actor=None):
+    """Append an audit-log row. Never raise - logging must not break a request."""
+    try:
+        if actor is None:
+            actor = 'admin' if session.get('logged_in') else 'anonymous'
+        addr = ''
+        try:
+            addr = (request.remote_addr or '')
+        except Exception:
+            pass
+        db.log_audit(actor, action, target, details, addr)
+    except Exception:
+        pass
+
+
 # ═══════════════════════════════════════════════════════════════ CSRF / headers
 
 @app.errorhandler(CSRFError)
@@ -237,7 +252,9 @@ def login():
             session.clear()
             session['logged_in']  = True
             session.permanent     = True
+            _audit('login.success', actor='admin')
             return redirect(url_for('dashboard'))
+        _audit('login.fail', actor='anonymous')
         error = 'Incorrect password. Try again.'
     return render_template('login.html',
                            error=error,
@@ -246,6 +263,8 @@ def login():
 
 @app.route('/logout')
 def logout():
+    if session.get('logged_in'):
+        _audit('logout', actor='admin')
     session.clear()
     return redirect(url_for('login'))
 
@@ -325,6 +344,9 @@ def share_new():
                 os.makedirs(data['path'], exist_ok=True)
                 _fix_share_dir(data['path'])
                 cfg.apply_all(nas_host=_get_nas_host())
+                _audit('share.create', target=data['name'],
+                       details={'protocols': json.loads(data['protocols']),
+                                'public': bool(data['public'])})
                 flash(f"Share «{data['name']}» created.", 'success')
                 return redirect(url_for('shares'))
             except Exception as e:
@@ -351,6 +373,9 @@ def share_edit(sid):
                 os.makedirs(data['path'], exist_ok=True)
                 _fix_share_dir(data['path'])
                 cfg.apply_all(nas_host=_get_nas_host())
+                _audit('share.update', target=data['name'],
+                       details={'protocols': json.loads(data['protocols']),
+                                'public': bool(data['public'])})
                 flash(f"Share «{data['name']}» updated.", 'success')
                 return redirect(url_for('shares'))
             except Exception as e:
@@ -367,6 +392,7 @@ def share_delete(sid):
         try:
             db.delete_share(sid)
             cfg.apply_all(nas_host=_get_nas_host())
+            _audit('share.delete', target=share['name'])
             flash(f"Share «{share['name']}» deleted.", 'success')
         except Exception as e:
             flash(str(e), 'danger')
@@ -399,6 +425,7 @@ def user_new():
             db.create_user(username, readonly=readonly)
             _create_system_user(username, password)
             cfg.apply_all(nas_host=_get_nas_host())
+            _audit('user.create', target=username, details={'readonly': readonly})
             flash(f"User «{username}» created.", 'success')
             return redirect(url_for('users'))
         except Exception as e:
@@ -418,14 +445,19 @@ def user_edit(uid):
         readonly = request.form.get('readonly') == 'on'
         try:
             db.update_user(uid, enabled, readonly=readonly)
+            pw_changed = False
             if password:
                 if len(password) < 4:
                     flash('Password must be at least 4 characters.', 'danger')
                     return render_template('user_form.html', user=user)
                 _set_password(user['username'], password)
+                pw_changed = True
             _toggle_samba_user(user['username'], enabled)
             _toggle_system_user(user['username'], enabled)
             cfg.apply_all(nas_host=_get_nas_host())
+            _audit('user.update', target=user['username'],
+                   details={'enabled': enabled, 'readonly': readonly,
+                            'password_changed': pw_changed})
             flash(f"User «{user['username']}» updated.", 'success')
             return redirect(url_for('users'))
         except Exception as e:
@@ -444,10 +476,47 @@ def user_delete(uid):
                 subprocess.run(['userdel', '-r', uname], check=False, capture_output=True)
                 subprocess.run(['smbpasswd', '-x', uname], check=False, capture_output=True)
                 _htpasswd_delete(uname)
+            _audit('user.delete', target=uname)
             flash(f"User «{uname}» deleted.", 'success')
         except Exception as e:
             flash(str(e), 'danger')
     return redirect(url_for('users'))
+
+
+# ══════════════════════════════════════════════════════════════ Audit log ════
+
+# Allow-list of action prefixes a user can filter by - keeps the LIKE
+# parameter from accepting arbitrary input.
+_AUDIT_FILTERS = ('user', 'share', 'service', 'admin', 'login', 'logout', 'ssl')
+
+
+@app.route('/audit')
+def audit_log():
+    page   = max(int(request.args.get('page',  1)  or 1), 1)
+    filt   = request.args.get('filter', '') or ''
+    if filt and filt not in _AUDIT_FILTERS:
+        filt = ''
+    per_page = 100
+    offset   = (page - 1) * per_page
+    rows  = db.get_audit_log(limit=per_page, offset=offset,
+                             action_prefix=filt or None)
+    total = db.count_audit_log(action_prefix=filt or None)
+    pages = max((total + per_page - 1) // per_page, 1)
+    return render_template('audit.html',
+                           rows=rows, page=page, pages=pages,
+                           total=total, filt=filt,
+                           filters=_AUDIT_FILTERS)
+
+
+@app.route('/api/audit')
+def api_audit():
+    limit  = min(max(int(request.args.get('limit', 100) or 100), 1), 500)
+    offset = max(int(request.args.get('offset', 0) or 0), 0)
+    filt   = request.args.get('filter', '') or ''
+    if filt and filt not in _AUDIT_FILTERS:
+        filt = ''
+    return jsonify(db.get_audit_log(limit=limit, offset=offset,
+                                    action_prefix=filt or None))
 
 
 # ══════════════════════════════════════════════════════════════ Settings ═════
@@ -468,6 +537,7 @@ def settings():
         else:
             try:
                 _write_admin_hash(generate_password_hash(new_pw))
+                _audit('admin.password_change')
                 flash('Password changed successfully.', 'success')
             except Exception as e:
                 flash(f'Failed to save password: {e}', 'danger')
@@ -488,9 +558,11 @@ def settings_ssl():
 
     err = _replace_ssl_pair(ssl_dir, cert_file, key_file)
     if err:
+        _audit('ssl.upload', target='rejected', details={'reason': err})
         flash(f'Certificate update rejected: {err}', 'danger')
     else:
         subprocess.run(['apache2ctl', 'graceful'], check=False, capture_output=True)
+        _audit('ssl.upload', target='installed')
         flash('SSL certificate updated. Apache reloaded.', 'success')
     return redirect(request.referrer or url_for('shares'))
 
@@ -608,6 +680,7 @@ def api_toggle_service(svc):
         subprocess.run(['supervisorctl', supervisorctl_cmd, prog],
                        capture_output=True)
 
+    _audit('service.toggle', target=svc, details={'enabled': states[svc]})
     return jsonify({'status': 'ok', 'enabled': states[svc]})
 
 

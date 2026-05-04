@@ -32,6 +32,10 @@
          class="nav-item {% if 'user' in (request.endpoint or '') %}active{% endif %}">
         <i class="bi bi-people-fill"></i><span>Users</span>
       </a>
+      <a href="{{ url_for('audit_log') }}"
+         class="nav-item {% if request.endpoint == 'audit_log' %}active{% endif %}">
+        <i class="bi bi-journal-text"></i><span>Audit log</span>
+      </a>
       <a href="{{ url_for('settings') }}"
          class="nav-item {% if request.endpoint == 'settings' %}active{% endif %}">
         <i class="bi bi-gear-fill"></i><span>Settings</span>
