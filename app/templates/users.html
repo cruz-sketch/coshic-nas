@@ -62,6 +62,7 @@
             <form method="post" action="{{ url_for('user_delete', uid=u.id) }}"
                   class="d-inline"
                   onsubmit="return confirm('Delete user «{{ u.username }}»? System account will be removed.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                 <i class="bi bi-trash"></i>
               </button>

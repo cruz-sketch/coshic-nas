@@ -1,21 +1,88 @@
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
+import tempfile
+from datetime import timedelta
 
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import (Flask, flash, jsonify, redirect, render_template,
+                   request, session, url_for)
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from config_generator import ConfigGenerator
 from database import Database
 
+# ═══════════════════════════════════════════════════════════════ Constants ══
+
+_CONFIG_DIR          = os.environ.get('CONFIG_DIR', '/data/config')
+_SERVICES_FILE       = os.path.join(_CONFIG_DIR, 'services.json')
+_ADMIN_PASSWORD_FILE = os.path.join(_CONFIG_DIR, 'admin_password')
+_SECRET_FILE         = os.path.join(_CONFIG_DIR, 'flask_secret')
+_NAS_SSH_PORT        = os.environ.get('NAS_SSH_PORT', '2222')
+_SHARES_ROOT         = os.path.realpath(os.environ.get('SHARES_DIR', '/data/shares'))
+
+# ═══════════════════════════════════════════════════════════════ App init ═══
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('WEBUI_SECRET', 'nas-dev-secret-change-me')
+
+# Trust X-Forwarded-* from a single reverse proxy (no-op if direct-exposed)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+def _load_or_create_secret():
+    """Persistent Flask secret key. Survives restarts and is shared between
+    gunicorn workers. Falls back to env var if explicitly set."""
+    env = (os.environ.get('WEBUI_SECRET') or '').strip()
+    if env:
+        return env.encode()
+    try:
+        with open(_SECRET_FILE, 'rb') as f:
+            data = f.read().strip()
+            if len(data) >= 32:
+                return data
+    except FileNotFoundError:
+        pass
+    os.makedirs(_CONFIG_DIR, exist_ok=True)
+    new_key = secrets.token_hex(32).encode()
+    fd = os.open(_SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(new_key)
+    return new_key
+
+
+app.secret_key = _load_or_create_secret()
+
+# True iff the UI is served over HTTPS (either by us or via reverse proxy).
+# Set WEBUI_HTTPS=1 to enable Secure cookies.
+_HTTPS = (os.environ.get('WEBUI_HTTPS', '') or '').lower() in ('1', 'true', 'yes')
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=_HTTPS,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+    WTF_CSRF_TIME_LIMIT=None,            # tokens valid for whole session
+    MAX_CONTENT_LENGTH=2 * 1024 * 1024,  # cap uploads (SSL files) at 2 MiB
+)
+
+csrf = CSRFProtect(app)
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri='memory://',
+)
 
 db  = Database()
 cfg = ConfigGenerator(db)
 
-# Regenerate all service configs on startup (writes portal page, smb.conf, etc.)
 try:
     cfg.apply_all()
 except Exception:
@@ -25,30 +92,120 @@ app.jinja_env.filters['from_json'] = lambda v: (
     json.loads(v) if isinstance(v, str) and v else (v if isinstance(v, list) else [])
 )
 
-_CONFIG_DIR           = os.environ.get('CONFIG_DIR', '/data/config')
-_SERVICES_FILE        = os.path.join(_CONFIG_DIR, 'services.json')
-_ADMIN_PASSWORD_FILE  = os.path.join(_CONFIG_DIR, 'admin_password')
-_NAS_SSH_PORT         = os.environ.get('NAS_SSH_PORT', '2222')
+
+# ═══════════════════════════════════════════════════════════════ Helpers ════
+
+_NAME_RE      = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$')
+_USER_RE      = re.compile(r'^[a-z][a-z0-9_-]{0,31}$')
+_PATH_RE      = re.compile(r'^[A-Za-z0-9_./\-]{1,255}$')
+_NFS_HOSTS_RE = re.compile(r'^[A-Za-z0-9_.\-/:*,\s]{1,255}$')
+_NFS_OPT_RE   = re.compile(r'^[A-Za-z0-9_,=.\-]{1,255}$')
+_CTRL_RE      = re.compile(r'[\x00-\x1f\x7f]')
 
 
-def _get_admin_password():
-    """Read password from persistent file; fall back to env var (default: admin)."""
+def _strip_ctrl(s, maxlen=255):
+    """Remove all control chars (incl. \\r \\n \\t) - prevents config injection
+    when the value is written to smb.conf, /etc/exports, apache-shares.conf etc."""
+    return _CTRL_RE.sub('', (s or ''))[:maxlen]
+
+
+def _safe_share_path(p):
+    """Confine share path to /data/shares/. Returns canonical path or None."""
+    if not p or not _PATH_RE.match(p):
+        return None
+    rp = os.path.realpath(p)
+    if rp == _SHARES_ROOT or rp.startswith(_SHARES_ROOT + os.sep):
+        return rp
+    return None
+
+
+def _read_admin_hash():
     try:
         with open(_ADMIN_PASSWORD_FILE) as f:
-            pw = f.read().strip()
-            if pw:
-                return pw
-    except Exception:
-        pass
-    return os.environ.get('LOGIN_PASSWORD', 'admin')
+            data = f.read().strip()
+    except FileNotFoundError:
+        return None
+    if not data:
+        return None
+    # Werkzeug hash markers; otherwise treat as legacy plaintext and migrate.
+    if data.startswith(('pbkdf2:', 'scrypt:', 'argon2')):
+        return data
+    migrated = generate_password_hash(data)
+    _write_admin_hash(migrated)
+    return migrated
+
+
+def _write_admin_hash(hashed):
+    os.makedirs(_CONFIG_DIR, exist_ok=True)
+    fd = os.open(_ADMIN_PASSWORD_FILE,
+                 os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write(hashed)
+
+
+def _verify_admin_password(pw):
+    stored = _read_admin_hash()
+    if stored:
+        return check_password_hash(stored, pw)
+    expected = os.environ.get('LOGIN_PASSWORD', 'admin')
+    return secrets.compare_digest(pw, expected)
+
+
+def _is_admin_default():
+    """True if admin login still uses the built-in 'admin' fallback - shown
+    as a banner in the UI."""
+    if _read_admin_hash():
+        return False
+    return os.environ.get('LOGIN_PASSWORD', 'admin') == 'admin'
+
+
+# ═══════════════════════════════════════════════════════════════ CSRF / headers
+
+@app.errorhandler(CSRFError)
+def _csrf_error(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'status': 'error', 'message': 'CSRF token missing or invalid'}), 400
+    flash('Security token expired or missing - please retry.', 'danger')
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+@app.context_processor
+def _inject_csrf():
+    return {'csrf_token': generate_csrf}
+
+
+@app.after_request
+def _security_headers(resp):
+    # CSP allows inline scripts/styles because the existing templates rely on
+    # them. Tightening this requires a separate refactor.
+    resp.headers.setdefault('X-Frame-Options', 'DENY')
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('Referrer-Policy', 'no-referrer')
+    resp.headers.setdefault(
+        'Content-Security-Policy',
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    if _HTTPS:
+        resp.headers.setdefault(
+            'Strict-Transport-Security',
+            'max-age=31536000; includeSubDomains'
+        )
+    return resp
 
 
 # ═══════════════════════════════════════════════════════════════ Auth ════════
 
 @app.before_request
 def _check_auth():
-    """Redirect to login for all protected routes."""
-    public = ('/login', '/logout')
+    public = ('/login', '/logout', '/healthz')
     if request.path.startswith('/static/') or request.path in public:
         return
     if not session.get('logged_in'):
@@ -57,23 +214,41 @@ def _check_auth():
         return redirect(url_for('login'))
 
 
+@app.route('/healthz')
+@csrf.exempt
+def healthz():
+    """Liveness probe for Docker / orchestrators. No auth, no CSRF."""
+    try:
+        db.get_stats()
+        return jsonify({'status': 'ok'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit('5 per minute', methods=['POST'])
 def login():
     if session.get('logged_in'):
         return redirect(url_for('dashboard'))
     error = None
     if request.method == 'POST':
-        if request.form.get('password') == _get_admin_password():
-            session['logged_in'] = True
+        if _verify_admin_password(request.form.get('password', '')):
+            # Defeat session-fixation: drop any pre-login session id.
+            session.clear()
+            session['logged_in']  = True
+            session.permanent     = True
             return redirect(url_for('dashboard'))
         error = 'Incorrect password. Try again.'
-    return render_template('login.html', error=error)
+    return render_template('login.html',
+                           error=error,
+                           is_default_password=_is_admin_default())
 
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
 
 SERVICE_PROGRAMS = {
     'smb':    ['samba-smbd', 'samba-nmbd'],
@@ -123,7 +298,8 @@ def dashboard():
                            disk=_disk_usage(),
                            nas_host=_get_nas_host(),
                            nas_ssh_port=_NAS_SSH_PORT,
-                           nas_host_configured=bool(os.environ.get('NAS_HOST', '').strip()))
+                           nas_host_configured=bool(os.environ.get('NAS_HOST', '').strip()),
+                           is_default_password=_is_admin_default())
 
 
 # ═══════════════════════════════════════════════════════════════ Shares ══════
@@ -214,8 +390,8 @@ def user_new():
         if err:
             flash(err, 'danger')
             return render_template('user_form.html', user=None)
-        if not password:
-            flash('Password is required.', 'danger')
+        if not password or len(password) < 4:
+            flash('Password is required (min 4 chars).', 'danger')
             return render_template('user_form.html', user=None)
 
         readonly = request.form.get('readonly') == 'on'
@@ -243,6 +419,9 @@ def user_edit(uid):
         try:
             db.update_user(uid, enabled, readonly=readonly)
             if password:
+                if len(password) < 4:
+                    flash('Password must be at least 4 characters.', 'danger')
+                    return render_template('user_form.html', user=user)
                 _set_password(user['username'], password)
             _toggle_samba_user(user['username'], enabled)
             _toggle_system_user(user['username'], enabled)
@@ -260,11 +439,12 @@ def user_delete(uid):
     if user:
         try:
             db.delete_user(uid)
-            subprocess.run(['userdel', '-r', user['username']], check=False, capture_output=True)
-            subprocess.run(['smbpasswd', '-x', user['username']], check=False, capture_output=True)
-            # remove from webdav passwords
-            _htpasswd_delete(user['username'])
-            flash(f"User «{user['username']}» deleted.", 'success')
+            uname = user['username']
+            if _USER_RE.match(uname):
+                subprocess.run(['userdel', '-r', uname], check=False, capture_output=True)
+                subprocess.run(['smbpasswd', '-x', uname], check=False, capture_output=True)
+                _htpasswd_delete(uname)
+            flash(f"User «{uname}» deleted.", 'success')
         except Exception as e:
             flash(str(e), 'danger')
     return redirect(url_for('users'))
@@ -279,21 +459,20 @@ def settings():
         new_pw  = request.form.get('new_password', '')
         confirm = request.form.get('confirm_password', '')
 
-        if current != _get_admin_password():
+        if not _verify_admin_password(current):
             flash('Current password is incorrect.', 'danger')
-        elif len(new_pw) < 4:
-            flash('New password must be at least 4 characters.', 'danger')
+        elif len(new_pw) < 8:
+            flash('New password must be at least 8 characters.', 'danger')
         elif new_pw != confirm:
             flash('New passwords do not match.', 'danger')
         else:
             try:
-                os.makedirs(os.path.dirname(_ADMIN_PASSWORD_FILE), exist_ok=True)
-                with open(_ADMIN_PASSWORD_FILE, 'w') as f:
-                    f.write(new_pw)
+                _write_admin_hash(generate_password_hash(new_pw))
                 flash('Password changed successfully.', 'success')
             except Exception as e:
                 flash(f'Failed to save password: {e}', 'danger')
-    return render_template('settings.html')
+    return render_template('settings.html',
+                           is_default_password=_is_admin_default())
 
 
 @app.route('/settings/ssl', methods=['POST'])
@@ -302,19 +481,87 @@ def settings_ssl():
     key_file  = request.files.get('ssl_key')
     ssl_dir   = os.path.join(_CONFIG_DIR, 'ssl')
     os.makedirs(ssl_dir, exist_ok=True)
-    saved = False
-    if cert_file and cert_file.filename:
-        cert_file.save(os.path.join(ssl_dir, 'server.crt'))
-        saved = True
-    if key_file and key_file.filename:
-        key_file.save(os.path.join(ssl_dir, 'server.key'))
-        saved = True
-    if saved:
+
+    if not (cert_file and cert_file.filename) and not (key_file and key_file.filename):
+        flash('No files were uploaded.', 'warning')
+        return redirect(request.referrer or url_for('shares'))
+
+    err = _replace_ssl_pair(ssl_dir, cert_file, key_file)
+    if err:
+        flash(f'Certificate update rejected: {err}', 'danger')
+    else:
         subprocess.run(['apache2ctl', 'graceful'], check=False, capture_output=True)
         flash('SSL certificate updated. Apache reloaded.', 'success')
-    else:
-        flash('No files were uploaded.', 'warning')
     return redirect(request.referrer or url_for('shares'))
+
+
+def _replace_ssl_pair(ssl_dir, cert_file, key_file):
+    """Validate uploaded cert and key with openssl, ensure they pair, then
+    install atomically. Returns error string or None."""
+    final_cert = os.path.join(ssl_dir, 'server.crt')
+    final_key  = os.path.join(ssl_dir, 'server.key')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_cert = os.path.join(tmp, 'cert.pem')
+        tmp_key  = os.path.join(tmp, 'key.pem')
+
+        if cert_file and cert_file.filename:
+            cert_file.save(tmp_cert)
+        elif os.path.exists(final_cert):
+            shutil.copy(final_cert, tmp_cert)
+        else:
+            return 'certificate file is required for first install'
+
+        if key_file and key_file.filename:
+            key_file.save(tmp_key)
+        elif os.path.exists(final_key):
+            shutil.copy(final_key, tmp_key)
+        else:
+            return 'private key file is required for first install'
+
+        for path, max_size in ((tmp_cert, 64 * 1024), (tmp_key, 64 * 1024)):
+            if os.path.getsize(path) > max_size:
+                return 'file too large'
+
+        cert_chk = subprocess.run(
+            ['openssl', 'x509', '-in', tmp_cert, '-noout', '-modulus'],
+            capture_output=True, text=True
+        )
+        if cert_chk.returncode != 0:
+            return 'invalid X.509 certificate'
+
+        key_chk = subprocess.run(
+            ['openssl', 'pkey', '-in', tmp_key, '-noout', '-pubout', '-outform', 'PEM'],
+            capture_output=True, text=True
+        )
+        if key_chk.returncode != 0:
+            # try RSA-only as a fallback for older formats
+            key_chk = subprocess.run(
+                ['openssl', 'rsa', '-in', tmp_key, '-noout', '-modulus'],
+                capture_output=True, text=True
+            )
+            if key_chk.returncode != 0:
+                return 'invalid private key'
+
+        # cert/key must match: compare modulus
+        cert_mod = subprocess.run(
+            ['openssl', 'x509', '-in', tmp_cert, '-noout', '-modulus'],
+            capture_output=True, text=True
+        ).stdout.strip()
+        key_mod = subprocess.run(
+            ['openssl', 'rsa', '-in', tmp_key, '-noout', '-modulus'],
+            capture_output=True, text=True
+        ).stdout.strip()
+        # ECDSA keys won't have a modulus; accept those without comparison.
+        if cert_mod and key_mod and cert_mod != key_mod:
+            return 'certificate and private key do not match'
+
+        # Install atomically
+        os.replace(tmp_cert, final_cert)
+        os.replace(tmp_key,  final_key)
+        os.chmod(final_cert, 0o644)
+        os.chmod(final_key,  0o600)
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════ API ═════════
@@ -337,6 +584,16 @@ def api_status():
     return jsonify(statuses)
 
 
+@app.route('/api/shares')
+def api_shares():
+    return jsonify(db.get_all_shares())
+
+
+@app.route('/api/users')
+def api_users():
+    return jsonify(db.get_all_users())
+
+
 @app.route('/api/services/<svc>/toggle', methods=['POST'])
 def api_toggle_service(svc):
     if svc not in SERVICE_PROGRAMS:
@@ -356,10 +613,6 @@ def api_toggle_service(svc):
 
 # ═══════════════════════════════════════════════════════════════ Helpers ═════
 
-_NAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$')
-_USER_RE = re.compile(r'^[a-z][a-z0-9_-]{0,31}$')
-
-
 def _validate_username(u):
     if not u:
         return 'Username is required.'
@@ -369,21 +622,37 @@ def _validate_username(u):
 
 
 def _parse_share_form(form):
-    name = form.get('name', '').strip()
+    name = _strip_ctrl(form.get('name', '').strip(), 64)
     if not name or not _NAME_RE.match(name):
         return None, 'Invalid share name (letters, digits, - _ only).'
 
-    path = form.get('path', '').strip() or f'/data/shares/{name}'
-    comment   = form.get('comment', '').strip()
-    protocols = form.getlist('protocols')
+    raw_path = _strip_ctrl(form.get('path', '').strip(), 255) or f'/data/shares/{name}'
+    safe_path = _safe_share_path(raw_path)
+    if not safe_path:
+        return None, f'Path must stay within {_SHARES_ROOT} (allowed chars: A-Z a-z 0-9 _ . - /).'
+
+    comment   = _strip_ctrl(form.get('comment', '').strip(), 255)
+    protocols = [p for p in form.getlist('protocols')
+                 if p in ('smb', 'nfs', 'ftp', 'sftp', 'webdav')]
     public    = 1 if form.get('public') == 'on' else 0
-    nfs_hosts = form.get('nfs_hosts', '*').strip() or '*'
-    nfs_opts  = form.get('nfs_options', 'rw,sync,no_subtree_check,no_root_squash').strip()
+
+    nfs_hosts_raw = _strip_ctrl(form.get('nfs_hosts', '*').strip(), 255) or '*'
+    if not _NFS_HOSTS_RE.match(nfs_hosts_raw):
+        return None, 'NFS hosts contains invalid characters.'
+
+    nfs_opts_raw = _strip_ctrl(
+        form.get('nfs_options', 'rw,sync,no_subtree_check,root_squash').strip(), 255)
+    if not _NFS_OPT_RE.match(nfs_opts_raw):
+        return None, 'NFS options contains invalid characters (allowed: a-z 0-9 _ , = . -).'
 
     usernames = form.getlist('access_user[]')
     levels    = form.getlist('access_level[]')
-    access_list = [{'username': u, 'access': a}
-                   for u, a in zip(usernames, levels) if u]
+    access_list = []
+    for u, a in zip(usernames, levels):
+        u = (u or '').strip().lower()
+        if not u or not _USER_RE.match(u):
+            continue
+        access_list.append({'username': u, 'access': 'rw' if a != 'ro' else 'ro'})
 
     timemachine           = 1 if (form.get('timemachine')           == 'on' and 'smb' in protocols) else 0
     smb_guest_write       = 1 if (form.get('smb_guest_write')       == 'on' and 'smb' in protocols and public) else 0
@@ -392,41 +661,49 @@ def _parse_share_form(form):
     webdav_inline_preview = 1 if (form.get('webdav_inline_preview') == 'on' and 'webdav' in protocols) else 0
 
     return {
-        'name':                 name,
-        'path':                 path,
-        'comment':              comment,
-        'protocols':            json.dumps(protocols),
-        'public':               public,
-        'smb_guest_write':      smb_guest_write,
-        'nfs_hosts':            nfs_hosts,
-        'nfs_options':          nfs_opts,
-        'access_list':          json.dumps(access_list),
-        'timemachine':          timemachine,
-        'smb_async_io':         smb_async_io,
-        'smb_sync_writes':      smb_sync_writes,
+        'name':                  name,
+        'path':                  safe_path,
+        'comment':               comment,
+        'protocols':             json.dumps(protocols),
+        'public':                public,
+        'smb_guest_write':       smb_guest_write,
+        'nfs_hosts':             nfs_hosts_raw,
+        'nfs_options':           nfs_opts_raw,
+        'access_list':           json.dumps(access_list),
+        'timemachine':           timemachine,
+        'smb_async_io':          smb_async_io,
+        'smb_sync_writes':       smb_sync_writes,
         'webdav_inline_preview': webdav_inline_preview,
     }, None
 
 
 def _fix_share_dir(path):
-    """Set share directory to nasusers group with group-write."""
+    safe = _safe_share_path(path)
+    if not safe:
+        return
     try:
-        os.chmod(path, 0o775)
-        subprocess.run(['chown', 'root:nasusers', path], check=False, capture_output=True)
+        os.chmod(safe, 0o775)
+        subprocess.run(['chown', 'root:nasusers', safe], check=False, capture_output=True)
     except Exception:
         pass
 
 
 def _create_system_user(username, password):
+    if not _USER_RE.match(username):
+        raise ValueError('invalid username')
     subprocess.run(
-        ['useradd', '-s', '/usr/sbin/nologin', '-d', '/data/shares', '-G', 'nasusers', username],
+        ['useradd', '-s', '/usr/sbin/nologin', '-d', '/data/shares',
+         '-G', 'nasusers', username],
         check=True, capture_output=True
     )
     _set_password(username, password)
 
 
 def _set_password(username, password):
-    # Generate SHA-512 hash directly via openssl to avoid PAM/chpasswd interactions in Docker.
+    if not _USER_RE.match(username):
+        raise ValueError('invalid username')
+
+    # System password: hash via openssl, then usermod -p (avoids PAM issues in Docker)
     result = subprocess.run(
         ['openssl', 'passwd', '-6', '-stdin'],
         input=password, capture_output=True, text=True
@@ -436,11 +713,11 @@ def _set_password(username, password):
                        check=False, capture_output=True)
     else:
         p = subprocess.Popen(['chpasswd'],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
         p.communicate(input=f'{username}:{password}\n'.encode())
 
-    # Remove stale Samba DB entry if it exists, then add fresh.
-    # smbpasswd -a fails silently when user already exists, leaving the password unchanged.
+    # Samba password (force fresh entry)
     subprocess.run(['smbpasswd', '-x', username], capture_output=True)
     p = subprocess.Popen(
         ['smbpasswd', '-a', '-s', username],
@@ -449,41 +726,66 @@ def _set_password(username, password):
     p.communicate(input=f'{password}\n{password}\n'.encode())
     subprocess.run(['smbpasswd', '-e', username], capture_output=True)
 
-    config_dir = os.environ.get('CONFIG_DIR', '/data/config')
-    htpasswd = f'{config_dir}/webdav.passwords'
-    flag = '-b' if os.path.exists(htpasswd) and username in open(htpasswd).read() else '-cb'
-    subprocess.run(['htpasswd', flag, htpasswd, username, password],
-                   check=False, capture_output=True)
+    _htpasswd_set(username, password)
+
+
+def _htpasswd_set(username, password):
+    """Update WebDAV htpasswd file. Uses -i (stdin) so the password never
+    appears in the process list."""
+    htpasswd = os.path.join(_CONFIG_DIR, 'webdav.passwords')
+    if not os.path.exists(htpasswd):
+        # Create empty file with restrictive perms before htpasswd touches it.
+        fd = os.open(htpasswd, os.O_WRONLY | os.O_CREAT, 0o640)
+        os.close(fd)
+    p = subprocess.Popen(
+        ['htpasswd', '-i', htpasswd, username],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    p.communicate(input=password.encode())
+    try:
+        os.chmod(htpasswd, 0o640)
+    except Exception:
+        pass
 
 
 def _toggle_samba_user(username, enabled):
+    if not _USER_RE.match(username):
+        return
     flag = '-e' if enabled else '-d'
     subprocess.run(['smbpasswd', flag, username], check=False, capture_output=True)
 
 
 def _toggle_system_user(username, enabled):
-    """Lock or unlock the Linux account to block/allow FTP and SFTP access."""
+    if not _USER_RE.match(username):
+        return
     flag = '-U' if enabled else '-L'
     subprocess.run(['usermod', flag, username], check=False, capture_output=True)
 
 
 def _htpasswd_delete(username):
-    config_dir = os.environ.get('CONFIG_DIR', '/data/config')
-    htpasswd = f'{config_dir}/webdav.passwords'
-    subprocess.run(['htpasswd', '-D', htpasswd, username], check=False, capture_output=True)
+    if not _USER_RE.match(username):
+        return
+    htpasswd = os.path.join(_CONFIG_DIR, 'webdav.passwords')
+    subprocess.run(['htpasswd', '-D', htpasswd, username],
+                   check=False, capture_output=True)
+
+
+# Allow-list of host headers we'll accept as 'self'. If unset, we reject
+# anything beyond the configured NAS_HOST or local addresses.
+_HOST_ALLOWLIST_RE = re.compile(r'^[A-Za-z0-9_.\-]{1,253}(:\d{1,5})?$')
 
 
 def _get_nas_host():
-    """Return the NAS host address to show in Connection Info.
-    Priority: NAS_HOST env var → hostname from the browser request → empty string."""
-    explicit = os.environ.get('NAS_HOST', '').strip()
+    explicit = (os.environ.get('NAS_HOST') or '').strip()
     if explicit:
         return explicit
     try:
-        # request.host is e.g. "192.168.1.10:8080" - strip the port
-        return request.host.split(':')[0]
+        host = (request.host or '').split(':')[0]
+        if host and _HOST_ALLOWLIST_RE.match(host):
+            return host
     except Exception:
-        return ''
+        pass
+    return ''
 
 
 def _get_ssl_cert_expiry():

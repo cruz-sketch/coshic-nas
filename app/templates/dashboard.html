@@ -15,6 +15,17 @@
 
 {% block content %}
 
+{% if is_default_password %}
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-4" role="alert">
+  <i class="bi bi-shield-exclamation flex-shrink-0 mt-1"></i>
+  <div>
+    <strong>Default admin password is in use.</strong>
+    Change it on the <a href="{{ url_for('settings') }}" class="alert-link">Settings page</a>
+    before exposing this NAS to the network.
+  </div>
+</div>
+{% endif %}
+
 {# ── Stats row ── #}
 <div class="row g-3 mb-4 stats-row">
   <div class="col-xl-3 col-sm-6">

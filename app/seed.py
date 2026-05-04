@@ -13,12 +13,16 @@ Example:
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
 sys.path.insert(0, '/app')
 from database import Database
 from config_generator import ConfigGenerator
+
+_USER_RE  = re.compile(r'^[a-z][a-z0-9_-]{0,31}$')
+_SHARE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$')
 
 
 def _parse_users(raw):
@@ -67,6 +71,8 @@ def _parse_shares(raw):
 
 
 def _create_system_user(username, password):
+    if not _USER_RE.match(username):
+        raise ValueError(f'invalid username: {username!r}')
     subprocess.run(
         ['useradd', '-s', '/usr/sbin/nologin', '-d', '/data/shares', '-G', 'nasusers', username],
         capture_output=True,
@@ -89,10 +95,21 @@ def _create_system_user(username, password):
     p.communicate(input=f'{password}\n{password}\n'.encode())
     subprocess.run(['smbpasswd', '-e', username], capture_output=True)
 
+    # WebDAV: pipe password via stdin so it never appears in `ps` output
     config_dir = os.environ.get('CONFIG_DIR', '/data/config')
     htpasswd = f'{config_dir}/webdav.passwords'
-    flag = '-b' if os.path.exists(htpasswd) and username in open(htpasswd).read() else '-cb'
-    subprocess.run(['htpasswd', flag, htpasswd, username, password], capture_output=True)
+    if not os.path.exists(htpasswd):
+        fd = os.open(htpasswd, os.O_WRONLY | os.O_CREAT, 0o640)
+        os.close(fd)
+    p = subprocess.Popen(
+        ['htpasswd', '-i', htpasswd, username],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    p.communicate(input=password.encode())
+    try:
+        os.chmod(htpasswd, 0o640)
+    except Exception:
+        pass
 
 
 def main():
@@ -109,6 +126,10 @@ def main():
     if nas_users:
         existing = {u['username'] for u in db.get_all_users()}
         for u in _parse_users(nas_users):
+            if not _USER_RE.match(u['username']):
+                print(f"[seed] user '{u['username']}' has invalid name, skipping",
+                      file=sys.stderr)
+                continue
             if u['username'] in existing:
                 print(f"[seed] user '{u['username']}' already exists, skipping")
                 continue
@@ -120,6 +141,10 @@ def main():
     if nas_shares:
         existing = {s['name'] for s in db.get_all_shares()}
         for s in _parse_shares(nas_shares):
+            if not _SHARE_RE.match(s['name']):
+                print(f"[seed] share '{s['name']}' has invalid name, skipping",
+                      file=sys.stderr)
+                continue
             if s['name'] in existing:
                 print(f"[seed] share '{s['name']}' already exists, skipping")
                 continue
@@ -133,11 +158,12 @@ def main():
                 'public':          s['public'],
                 'smb_guest_write': 0,
                 'nfs_hosts':       '*',
-                'nfs_options':     'rw,sync,no_subtree_check,no_root_squash',
+                'nfs_options':     'rw,sync,no_subtree_check,root_squash',
                 'access_list':     json.dumps(s['access_list']),
                 'timemachine':     s['timemachine'],
                 'smb_async_io':    s['smb_async_io'],
                 'smb_sync_writes': s['smb_sync_writes'],
+                'webdav_inline_preview': 1,
             })
             os.makedirs(path, exist_ok=True)
             try:

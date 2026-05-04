@@ -31,6 +31,10 @@ services:
       # Web UI admin password - default is "admin".
       # Change it via the Settings page in the Web UI, or set here before first run.
       # LOGIN_PASSWORD: "admin"
+
+      # Set to "1" if the Web UI is served over HTTPS (e.g. behind a reverse
+      # proxy that terminates TLS). Enables Secure cookies and HSTS.
+      # WEBUI_HTTPS: "0"
       #
       # Your server's LAN IP. Required for FTP passive mode (Docker bridge networking cannot
       # auto-detect the host IP from inside the container). Also shown in Connection Info in the UI.

@@ -38,9 +38,15 @@ RUN python3 -m venv /app/venv && \
 
 COPY app/ .
 
-# Download frontend vendor assets at build time so the container runs fully offline
+# Download frontend vendor assets at build time so the container runs fully offline.
+# Each download is logged with its SHA-256 so build output can be audited for
+# unexpected changes from the upstream CDN. To enforce verification, copy the
+# expected hashes into vendor-assets.sha256 (one "<sha256>  <path>" per line)
+# and the build will fail on mismatch.
+COPY app/vendor-assets.sha256 /tmp/vendor-assets.sha256
 RUN mkdir -p static/vendor/bootstrap \
              static/vendor/bootstrap-icons/fonts && \
+    set -eu && \
     curl -fsSL "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" \
          -o static/vendor/bootstrap/bootstrap.min.css && \
     curl -fsSL "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" \
@@ -50,7 +56,22 @@ RUN mkdir -p static/vendor/bootstrap \
     curl -fsSL "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/fonts/bootstrap-icons.woff2" \
          -o static/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2 && \
     curl -fsSL "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/fonts/bootstrap-icons.woff" \
-         -o static/vendor/bootstrap-icons/fonts/bootstrap-icons.woff
+         -o static/vendor/bootstrap-icons/fonts/bootstrap-icons.woff && \
+    echo "=== Vendor asset SHA-256 (audit me) ===" && \
+    (cd static && sha256sum \
+        vendor/bootstrap/bootstrap.min.css \
+        vendor/bootstrap/bootstrap.bundle.min.js \
+        vendor/bootstrap-icons/bootstrap-icons.css \
+        vendor/bootstrap-icons/fonts/bootstrap-icons.woff2 \
+        vendor/bootstrap-icons/fonts/bootstrap-icons.woff) && \
+    if [ -s /tmp/vendor-assets.sha256 ]; then \
+        echo "=== Verifying against pinned hashes ===" && \
+        (cd static && sha256sum -c /tmp/vendor-assets.sha256); \
+    else \
+        echo "WARNING: vendor-assets.sha256 is empty - assets are NOT pinned." \
+             "Run the build once, copy the SHA-256 lines from above into" \
+             "app/vendor-assets.sha256, then rebuild to enable verification." >&2; \
+    fi
 
 COPY supervisord.conf /etc/supervisor/conf.d/nas.conf
 COPY apache-webdav.conf /etc/apache2/sites-available/nas-webdav.conf

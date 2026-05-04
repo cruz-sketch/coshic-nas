@@ -63,6 +63,7 @@
             <form method="post" action="{{ url_for('share_delete', sid=s.id) }}"
                   class="d-inline"
                   onsubmit="return confirm('Delete share «{{ s.name }}»?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                 <i class="bi bi-trash"></i>
               </button>

@@ -11,7 +11,14 @@
         <i class="bi bi-key-fill me-2 text-primary"></i>Change Admin Password
       </div>
       <div class="card-body">
+        {% if is_default_password %}
+        <div class="alert alert-warning py-2 px-3 mb-3 small">
+          <i class="bi bi-shield-exclamation me-1"></i>
+          You are still using the default password. Set a strong one below.
+        </div>
+        {% endif %}
         <form method="post" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <label class="form-label fw-semibold">Current Password</label>
             <input type="password" name="current_password" class="form-control"
@@ -21,7 +28,7 @@
             <label class="form-label fw-semibold">New Password</label>
             <input type="password" name="new_password" class="form-control"
                    autocomplete="new-password" required placeholder="••••••••"
-                   minlength="4">
+                   minlength="8">
           </div>
           <div class="mb-4">
             <label class="form-label fw-semibold">Confirm New Password</label>

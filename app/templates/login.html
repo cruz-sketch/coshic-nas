@@ -20,6 +20,13 @@
 
     <p class="login-sub">Enter the admin password to continue</p>
 
+    {% if is_default_password %}
+    <div class="alert alert-warning py-2 px-3 mb-3 small">
+      <i class="bi bi-shield-exclamation me-1"></i>
+      Default password is in use. Sign in and change it in <strong>Settings</strong>.
+    </div>
+    {% endif %}
+
     {% if error %}
     <div class="alert alert-danger py-2 px-3 mb-3 small">
       <i class="bi bi-exclamation-circle me-1"></i>{{ error }}
@@ -27,6 +34,7 @@
     {% endif %}
 
     <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-4">
         <label class="form-label fw-semibold">Password</label>
         <div class="input-group">

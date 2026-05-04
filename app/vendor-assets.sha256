@@ -1,0 +1,14 @@
+# Pin frontend assets against CDN tampering.
+#
+# Format: one "<sha256>  <path>" line per file (path relative to /app/static),
+# matching the output of `sha256sum`. Lines starting with "#" are ignored
+# (sha256sum -c skips them).
+#
+# To regenerate: clear this file (keeping the header), run `docker build .`,
+# and copy the lines printed under "=== Vendor asset SHA-256 (audit me) ===".
+
+3c8f27e6009ccfd710a905e6dcf12d0ee3c6f2ac7da05b0572d3e0d12e736fc8  vendor/bootstrap/bootstrap.min.css
+0833b2e9c3a26c258476c46266e6877fc75218625162e0460be9a3a098a61c6c  vendor/bootstrap/bootstrap.bundle.min.js
+4ffa6bea4304d2eda418683f56261685ed47bf00995039f27e5ad62d53938d2d  vendor/bootstrap-icons/bootstrap-icons.css
+476adf42b40325098fcfa8b36ab3e769186bb4f6ce6a249753e2e1a9c22bf99e  vendor/bootstrap-icons/fonts/bootstrap-icons.woff2
+bb1de989b83970f6f4e54de1cd974c5cba55b73582da5e1b225a6d0edf029483  vendor/bootstrap-icons/fonts/bootstrap-icons.woff

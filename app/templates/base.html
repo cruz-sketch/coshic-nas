@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="{{ csrf_token() }}" />
   <title>Coshic NAS{% block title %}{% endblock %}</title>
   <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css" />
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.css" />
@@ -39,7 +40,7 @@
 
     <div class="sidebar-footer">
       <i class="bi bi-circle-fill text-success" style="font-size:8px"></i>
-      <span>Coshic NAS v0.7</span>
+      <span>Coshic NAS v0.7.1</span>
       <a href="https://github.com/cruz-sketch/coshic-nas" target="_blank"
          title="GitHub" style="color:inherit;opacity:.45;line-height:1;margin-left:6px">
         <i class="bi bi-github"></i>

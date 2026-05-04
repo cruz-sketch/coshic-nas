@@ -13,6 +13,7 @@
 {% set cur_access = (share.access_list | from_json) if share else [] %}
 
 <form method="post" id="shareForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="row g-4">
 
   {# ── Basic ── #}
@@ -197,6 +198,7 @@
                 {% endif %}
               </div>
               <form method="post" action="{{ url_for('settings_ssl') }}" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-2">
                   <label class="form-label fw-semibold small mb-1">Certificate <span class="text-muted fw-normal">(.crt / .pem)</span></label>
                   <input type="file" name="ssl_cert" class="form-control form-control-sm" accept=".crt,.pem,.cer">

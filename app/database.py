@@ -21,18 +21,21 @@ class Database:
         with self._conn() as c:
             c.executescript('''
                 CREATE TABLE IF NOT EXISTS shares (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name            TEXT UNIQUE NOT NULL,
-                    path            TEXT NOT NULL,
-                    comment         TEXT DEFAULT '',
-                    protocols       TEXT DEFAULT '[]',
-                    public          INTEGER DEFAULT 0,
-                    smb_guest_write INTEGER DEFAULT 0,
-                    nfs_hosts       TEXT DEFAULT '*',
-                    nfs_options     TEXT DEFAULT 'rw,sync,no_subtree_check,no_root_squash',
-                    access_list     TEXT DEFAULT '[]',
-                    timemachine     INTEGER DEFAULT 0,
-                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name                  TEXT UNIQUE NOT NULL,
+                    path                  TEXT NOT NULL,
+                    comment               TEXT DEFAULT '',
+                    protocols             TEXT DEFAULT '[]',
+                    public                INTEGER DEFAULT 0,
+                    smb_guest_write       INTEGER DEFAULT 0,
+                    nfs_hosts             TEXT DEFAULT '*',
+                    nfs_options           TEXT DEFAULT 'rw,sync,no_subtree_check,root_squash',
+                    access_list           TEXT DEFAULT '[]',
+                    timemachine           INTEGER DEFAULT 0,
+                    smb_async_io          INTEGER DEFAULT 1,
+                    smb_sync_writes       INTEGER DEFAULT 0,
+                    webdav_inline_preview INTEGER DEFAULT 1,
+                    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
                 CREATE TABLE IF NOT EXISTS users (
@@ -43,7 +46,7 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             ''')
-            # migrations for existing DBs
+            # migrations for existing DBs (silently skip if column already exists)
             for migration in (
                 'ALTER TABLE users ADD COLUMN readonly INTEGER DEFAULT 0',
                 'ALTER TABLE shares ADD COLUMN timemachine INTEGER DEFAULT 0',
@@ -54,7 +57,8 @@ class Database:
             ):
                 try:
                     c.execute(migration)
-                except Exception:
+                except sqlite3.OperationalError:
+                    # "duplicate column name" - already migrated
                     pass
 
     # ---- Shares ----

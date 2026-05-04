@@ -1,9 +1,26 @@
 import json
 import os
+import re
 import subprocess
 
 CONFIG_DIR  = os.environ.get('CONFIG_DIR',  '/data/config')
 SHARES_DIR  = os.environ.get('SHARES_DIR',  '/data/shares')
+
+# Defence-in-depth: even if app.py validation is bypassed somehow, scrub control
+# chars before writing values to service config files (smb.conf / exports / apache).
+_CTRL_RE = re.compile(r'[\x00-\x1f\x7f]')
+_USER_RE = re.compile(r'^[a-z][a-z0-9_-]{0,31}$')
+
+
+def _safe(s, maxlen=255):
+    return _CTRL_RE.sub('', (s or ''))[:maxlen]
+
+
+def _safe_user(u):
+    """Return username if it matches the strict pattern, else None.
+    Used everywhere a username is interpolated into a config file."""
+    u = (u or '').strip()
+    return u if _USER_RE.match(u) else None
 
 
 class ConfigGenerator:
@@ -68,17 +85,28 @@ class ConfigGenerator:
                 continue
 
             access = self._access(s)
-            valid_users = [a['username'] for a in access if a.get('username') not in ('', '*')]
+            valid_users = [vu for vu in
+                           (_safe_user(a.get('username')) for a in access)
+                           if vu]
             # A user gets write access only if: share grants rw AND user is not globally readonly
-            write_users = [a['username'] for a in access
-                           if a.get('access') == 'rw'
-                           and a.get('username') not in ('', '*')
-                           and a['username'] not in readonly_users]
-            is_public = s.get('public', 0) or any(a.get('username') == '*' for a in access)
+            write_users = [vu for vu in
+                           (_safe_user(a.get('username')) for a in access
+                            if a.get('access') == 'rw')
+                           if vu and vu not in readonly_users]
+            is_public = bool(s.get('public', 0))
 
-            lines += [f"[{s['name']}]",
-                      f"   path = {s['path']}",
-                      f"   comment = {s.get('comment', '')}",
+            name = _safe(s.get('name', ''), 64)
+            path = _safe(s.get('path', ''), 255)
+
+            # Default-deny: a private share without any allowed users would
+            # otherwise grant access to ALL authenticated samba users (since
+            # 'valid users' would be omitted). Skip the section entirely.
+            if not is_public and not valid_users:
+                continue
+
+            lines += [f"[{name}]",
+                      f"   path = {path}",
+                      f"   comment = {_safe(s.get('comment', ''), 255)}",
                       '   browseable = yes',
                       '   create mask = 0664',
                       '   directory mask = 0775']
@@ -89,8 +117,7 @@ class ConfigGenerator:
                     lines.append('   force group = nasusers')
             else:
                 lines.append('   read only = no')
-                if valid_users:
-                    lines.append(f"   valid users = {' '.join(valid_users)}")
+                lines.append(f"   valid users = {' '.join(valid_users)}")
                 if write_users:
                     lines.append(f"   write list = {' '.join(write_users)}")
 
@@ -119,18 +146,29 @@ class ConfigGenerator:
         subprocess.run(['pkill', '-HUP', 'smbd'], check=False, capture_output=True)
 
     # -------------------------------------------------------------------- NFS
+    _NFS_HOSTS_RE = re.compile(r'^[A-Za-z0-9_.\-/:*,\s]{1,255}$')
+    _NFS_OPT_RE   = re.compile(r'^[A-Za-z0-9_,=.\-]{1,255}$')
+
     def _apply_nfs(self, shares):
         nfs_shares = [s for s in shares if 'nfs' in self._protocols(s)]
         lines = []
 
         if nfs_shares:
             # NFSv4 pseudo-root - without this the kernel NFS server refuses all NFSv4 connections
-            lines.append(f'{SHARES_DIR} *(ro,fsid=root,no_subtree_check)')
+            lines.append(f'{SHARES_DIR} *(ro,fsid=root,no_subtree_check,root_squash)')
 
         for s in nfs_shares:
-            hosts = (s.get('nfs_hosts') or '*').strip() or '*'
-            opts  = (s.get('nfs_options') or 'rw,sync,no_subtree_check,no_root_squash').strip()
-            lines.append(f"{s['path']} {hosts}({opts})")
+            path  = _safe(s.get('path', ''), 255)
+            if not path:
+                continue
+            hosts = _safe((s.get('nfs_hosts') or '*').strip(), 255) or '*'
+            opts  = _safe(
+                (s.get('nfs_options') or 'rw,sync,no_subtree_check,root_squash').strip(),
+                255)
+            if not self._NFS_HOSTS_RE.match(hosts) or not self._NFS_OPT_RE.match(opts):
+                # Skip malformed entries rather than corrupt /etc/exports
+                continue
+            lines.append(f"{path} {hosts}({opts})")
 
         self._write('/etc/exports', '\n'.join(lines) + ('\n' if lines else ''))
         subprocess.run(['exportfs', '-ra'], check=False, capture_output=True)
@@ -153,15 +191,19 @@ class ConfigGenerator:
         for s in shares:
             if 'webdav' not in self._protocols(s):
                 continue
-            name      = s['name']
-            path      = s['path']
+            name = _safe(s.get('name', ''), 64)
+            path = _safe(s.get('path', ''), 255)
+            if not name or not path:
+                continue
             is_public = s.get('public', 0)
 
             lines += [
                 f'Alias /{name} {path}',
                 f'<Directory {path}>',
                 '    DAV On',
-                '    Options Indexes FollowSymLinks',
+                # SymLinksIfOwnerMatch prevents users from following symlinks
+                # that point outside the share (e.g. ln -s / leak)
+                '    Options Indexes SymLinksIfOwnerMatch',
                 '    AllowOverride None',
                 '    IndexOptions FancyIndexing HTMLTable SuppressHTMLPreamble SuppressDescription VersionSort NameWidth=*',
                 '    HeaderName /webdav-ui/header.html',
@@ -388,8 +430,8 @@ address { display: none; }
 
         # nas_host comes from request.host (the IP the browser used to reach the UI);
         # NAS_HOST env is the fallback for startup/seed where no request is available
-        pasv_address = nas_host or os.environ.get('NAS_HOST', '')
-        if pasv_address:
+        pasv_address = _safe(nas_host or os.environ.get('NAS_HOST', ''), 253)
+        if pasv_address and re.match(r'^[A-Za-z0-9_.\-]{1,253}$', pasv_address):
             lines.append(f'pasv_address={pasv_address}')
 
         self._write('/etc/vsftpd.conf', '\n'.join(lines) + '\n')
@@ -445,7 +487,7 @@ address { display: none; }
         os.makedirs(avahi_dir, exist_ok=True)
 
         dk_records = '\n'.join(
-            f'    <txt-record>dk{i}=adVN={s["name"]},adVF=0x82</txt-record>'
+            f'    <txt-record>dk{i}=adVN={_safe(s.get("name", ""), 64)},adVF=0x82</txt-record>'
             for i, s in enumerate(tm_shares)
         )
 
@@ -634,7 +676,7 @@ address { display: none; }
 </html>
 '''
 
-        nas_host = os.environ.get('NAS_HOST', 'nas-server')
+        nas_host = _safe(os.environ.get('NAS_HOST', 'nas-server'), 253)
         html = html.replace('{{HOST}}', nas_host)
         self._write('/var/www/html/index.html', html)
 

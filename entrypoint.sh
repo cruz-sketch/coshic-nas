@@ -21,12 +21,19 @@ PasswordAuthentication yes
 ChallengeResponseAuthentication no
 PermitRootLogin no
 UsePAM yes
+MaxAuthTries 3
+LoginGraceTime 20
+MaxSessions 4
+ClientAliveInterval 300
+ClientAliveCountMax 2
 
 Match Group nasusers
     ChrootDirectory /data/shares
     ForceCommand internal-sftp
     AllowTcpForwarding no
     X11Forwarding no
+    AllowAgentForwarding no
+    PermitTunnel no
 SSHEOF
 fi
 
@@ -120,11 +127,14 @@ if [ ! -f "$SSL_DIR/server.crt" ]; then
         -keyout "$SSL_DIR/server.key" \
         -out "$SSL_DIR/server.crt" \
         -subj "/CN=nas-server/O=NAS Server/C=UA" 2>/dev/null
+    chmod 600 "$SSL_DIR/server.key"
+    chmod 644 "$SSL_DIR/server.crt"
 fi
 
 # --- WebDAV init file ---
 if [ ! -f "$CONFIG_DIR/webdav.passwords" ]; then
     touch "$CONFIG_DIR/webdav.passwords"
+    chmod 640 "$CONFIG_DIR/webdav.passwords"
 fi
 
 # --- Default service states (FTP off by default) ---
