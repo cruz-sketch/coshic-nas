@@ -135,6 +135,7 @@ fi
 if [ ! -f "$CONFIG_DIR/webdav.passwords" ]; then
     touch "$CONFIG_DIR/webdav.passwords"
     chmod 640 "$CONFIG_DIR/webdav.passwords"
+    chown root:www-data "$CONFIG_DIR/webdav.passwords"
 fi
 
 # --- Default service states (FTP off by default) ---

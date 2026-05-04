@@ -815,7 +815,10 @@ def _htpasswd_set(username, password):
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     p.communicate(input=password.encode())
+    # Apache (www-data) must read this file; htpasswd preserves owner but we
+    # re-assert group + mode in case of fresh creation or perms drift.
     try:
+        shutil.chown(htpasswd, group='www-data')
         os.chmod(htpasswd, 0o640)
     except Exception:
         pass
