@@ -22,13 +22,24 @@ A self-hosted NAS server running in Docker with a web-based management UI. Suppo
 
 ## Quick Start
 
+Pull the prebuilt image from GitHub Container Registry (multi-arch: `amd64`, `arm64`, `armhf`):
+
 ```bash
-git clone https://github.com/cruz-sketch/coshic-nas
-cd coshic-nas
-docker compose up -d --build
+curl -O https://raw.githubusercontent.com/cruz-sketch/coshic-nas/main/docker-compose.yml
+docker compose up -d
 ```
 
 Open `http://localhost:8080` - default password: **admin**
+
+### Build from source
+
+If you want to build the image locally (e.g. for development or to run a customized version), use `docker-compose-build.yml`:
+
+```bash
+git clone https://github.com/cruz-sketch/coshic-nas
+cd coshic-nas
+docker compose -f docker-compose-build.yml up -d --build
+```
 
 ## Configuration
 

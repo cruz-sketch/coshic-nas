@@ -1,14 +1,12 @@
-# Pulls the prebuilt image from GitHub Container Registry.
-# Use this for production / a quick start.
-# For local development or a custom build, use docker-compose-build.yml.
+# Local-build compose - rebuilds the image from this checkout.
+# Use this for development or to run a customized version.
+# For the published image, use docker-compose.yml instead.
 #
-#   docker compose up -d
-#
-# Multi-arch image is published for: linux/amd64, linux/arm64, linux/arm/v7
+#   docker compose -f docker-compose-build.yml up -d --build
 
 services:
   nas:
-    image: ghcr.io/cruz-sketch/coshic-nas:latest
+    build: .
     container_name: coshic-nas
     restart: unless-stopped
     stop_grace_period: 30s
