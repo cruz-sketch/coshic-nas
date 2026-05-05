@@ -27,7 +27,7 @@
 <div class="row g-3 mb-4 stats-row">
   <div class="col-xl-3 col-sm-6">
     <div class="stat-card">
-      <div class="stat-icon" style="background:rgba(79,110,247,.15);color:#4f6ef7" aria-hidden="true">
+      <div class="stat-icon stat-icon-primary" aria-hidden="true">
         <i class="bi bi-folder-fill"></i>
       </div>
       <div>
@@ -38,7 +38,7 @@
   </div>
   <div class="col-xl-3 col-sm-6">
     <div class="stat-card">
-      <div class="stat-icon" style="background:rgba(34,197,94,.15);color:#22c55e" aria-hidden="true">
+      <div class="stat-icon stat-icon-success" aria-hidden="true">
         <i class="bi bi-people-fill"></i>
       </div>
       <div>
@@ -49,7 +49,7 @@
   </div>
   <div class="col-xl-3 col-sm-6">
     <div class="stat-card">
-      <div class="stat-icon" style="background:rgba(251,191,36,.15);color:#f59e0b" aria-hidden="true">
+      <div class="stat-icon stat-icon-warning" aria-hidden="true">
         <i class="bi bi-cpu-fill"></i>
       </div>
       <div>
@@ -64,7 +64,7 @@
     {% if disk %}
     <div class="stat-card disk-card">
       <div class="disk-top">
-        <div class="stat-icon" style="background:rgba(168,139,250,.15);color:#a78bfa" aria-hidden="true">
+        <div class="stat-icon stat-icon-purple" aria-hidden="true">
           <i class="bi bi-hdd-fill"></i>
         </div>
         <div>
@@ -88,7 +88,7 @@
     </div>
     {% else %}
     <div class="stat-card">
-      <div class="stat-icon" style="background:rgba(168,139,250,.15);color:#a78bfa" aria-hidden="true">
+      <div class="stat-icon stat-icon-purple" aria-hidden="true">
         <i class="bi bi-hdd-fill"></i>
       </div>
       <div>
@@ -192,20 +192,35 @@
       </div>
       <div class="card-body small text-muted">
         {% set h = nas_host if nas_host else '&lt;host&gt;' %}
-        <div class="mb-1"><strong>SMB:</strong>
+        <div class="conn-row"><strong>SMB:</strong>
           <code>\\{{ h | safe }}\&lt;share&gt;</code>
+          <button type="button" class="conn-copy-btn js-conn-copy" aria-label="Copy SMB path">
+            <i class="bi bi-copy" aria-hidden="true"></i>
+          </button>
         </div>
-        <div class="mb-1"><strong>NFS:</strong>
+        <div class="conn-row"><strong>NFS:</strong>
           <code>mount {{ h | safe }}:/data/shares/&lt;share&gt; /mnt</code>
+          <button type="button" class="conn-copy-btn js-conn-copy" aria-label="Copy NFS mount command">
+            <i class="bi bi-copy" aria-hidden="true"></i>
+          </button>
         </div>
-        <div class="mb-1"><strong>FTP:</strong>
-          <code>ftp://{{ h | safe }}</code> <span class="ms-1">port 21</span>
+        <div class="conn-row"><strong>FTP:</strong>
+          <code>ftp://{{ h | safe }}</code> <span>port 21</span>
+          <button type="button" class="conn-copy-btn js-conn-copy" aria-label="Copy FTP URL">
+            <i class="bi bi-copy" aria-hidden="true"></i>
+          </button>
         </div>
-        <div class="mb-1"><strong>SFTP:</strong>
+        <div class="conn-row"><strong>SFTP:</strong>
           <code>sftp://&lt;user&gt;@{{ h | safe }} -p {{ nas_ssh_port }}</code>
+          <button type="button" class="conn-copy-btn js-conn-copy" aria-label="Copy SFTP command">
+            <i class="bi bi-copy" aria-hidden="true"></i>
+          </button>
         </div>
-        <div><strong>WebDAV:</strong>
+        <div class="conn-row mb-0"><strong>WebDAV:</strong>
           <code>http://{{ h | safe }}/&lt;share&gt;</code>
+          <button type="button" class="conn-copy-btn js-conn-copy" aria-label="Copy WebDAV URL">
+            <i class="bi bi-copy" aria-hidden="true"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -286,6 +301,23 @@
 
   document.querySelectorAll('.svc-toggle').forEach(cb => {
     cb.addEventListener('change', () => toggleService(cb));
+  });
+
+  // Connection Info copy buttons - read the <code> next to the button.
+  document.querySelectorAll('.js-conn-copy').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const code = btn.parentElement.querySelector('code');
+      if (!code) return;
+      const ok = await window.copyText(code.textContent);
+      const icon = btn.querySelector('i');
+      if (ok) {
+        icon.className = 'bi bi-check-lg text-success';
+        showToast('Copied to clipboard', 'success');
+        setTimeout(() => { icon.className = 'bi bi-copy'; }, 1600);
+      } else {
+        showToast('Copy failed', 'danger');
+      }
+    });
   });
 })();
 </script>

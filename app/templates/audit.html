@@ -30,7 +30,7 @@
           <th scope="col">Actor</th>
           <th scope="col">Action</th>
           <th scope="col">Target</th>
-          <th scope="col">Details</th>
+          <th class="d-none d-md-table-cell" scope="col">Details</th>
           <th class="pe-4" scope="col">From</th>
         </tr>
       </thead>
@@ -50,7 +50,7 @@
             <span class="badge badge-soft badge-{{ sev }}">{{ r.action }}</span>
           </td>
           <td class="fw-semibold">{{ r.target }}</td>
-          <td class="text-muted small" style="max-width:340px;word-break:break-all">{{ r.details }}</td>
+          <td class="d-none d-md-table-cell text-muted small" style="max-width:340px;word-break:break-all">{{ r.details }}</td>
           <td class="pe-4 text-muted small" style="white-space:nowrap">{{ r.remote_addr }}</td>
         </tr>
         {% endfor %}

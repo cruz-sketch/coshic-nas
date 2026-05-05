@@ -19,6 +19,34 @@ window.CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content |
   };
 })();
 
+// ─────────────────────────────────────────────────────── Clipboard helper
+// Copies `text` to clipboard. The optional `container` element receives the
+// hidden <textarea> when falling back to execCommand('copy') - required when
+// the caller is inside a Bootstrap modal whose focus trap would otherwise
+// reject focus() on a node outside it. Returns Promise<boolean>.
+window.copyText = function (text, container) {
+  container = container || document.body;
+  return new Promise((resolve) => {
+    const fallback = () => {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.cssText = 'position:absolute;opacity:0;pointer-events:none;width:1px;height:1px';
+      container.appendChild(el);
+      el.focus();
+      el.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) {}
+      el.remove();
+      resolve(ok);
+    };
+    if (window.isSecureContext && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => resolve(true)).catch(fallback);
+    } else {
+      fallback();
+    }
+  });
+};
+
 // ─────────────────────────────────────────────────────── Toast helper
 window.showToast = function (message, variant = 'info') {
   let stack = document.getElementById('toastStack');

@@ -231,6 +231,20 @@ code {
   flex-shrink: 0;
 }
 
+/* Tinted variants for stat-icon (replace inline style="background:rgba(...);color:...") */
+.stat-icon-primary { background: rgba(79,110,247,.15);  color: #4f6ef7; }
+.stat-icon-success { background: rgba(34,197,94,.15);   color: #22c55e; }
+.stat-icon-warning { background: rgba(251,191,36,.15);  color: #f59e0b; }
+.stat-icon-purple  { background: rgba(168,139,250,.15); color: #a78bfa; }
+.stat-icon-info    { background: rgba(6,182,212,.15);   color: #06b6d4; }
+
+/* Smaller stat-icon (e.g. inside cards on Settings) */
+.stat-icon-sm {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+
 .stat-label {
   font-size: 12px;
   color: var(--text-muted);
@@ -752,6 +766,37 @@ code {
   padding: 3px 9px;
   font-size: 13px;
   line-height: 1.4;
+}
+
+/* ══════════════════════════════════ Connection Info (dashboard) */
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.conn-row strong { flex-shrink: 0; }
+
+.conn-copy-btn {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color .15s, background .15s;
+  margin-left: auto;
+}
+
+.conn-copy-btn:hover { color: var(--accent); background: #edf0ff; }
+.conn-copy-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--accent);
 }
 
 /* ══════════════════════════════════ Toast stack */

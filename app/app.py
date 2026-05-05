@@ -26,6 +26,7 @@ _ADMIN_PASSWORD_FILE = os.path.join(_CONFIG_DIR, 'admin_password')
 _SECRET_FILE         = os.path.join(_CONFIG_DIR, 'flask_secret')
 _NAS_SSH_PORT        = os.environ.get('NAS_SSH_PORT', '2222')
 _SHARES_ROOT         = os.path.realpath(os.environ.get('SHARES_DIR', '/data/shares'))
+_APP_VERSION         = '0.7.3'
 
 # ═══════════════════════════════════════════════════════════════ App init ═══
 
@@ -186,7 +187,7 @@ def _csrf_error(e):
 
 @app.context_processor
 def _inject_csrf():
-    return {'csrf_token': generate_csrf}
+    return {'csrf_token': generate_csrf, 'app_version': _APP_VERSION}
 
 
 @app.after_request

@@ -36,7 +36,7 @@
             {% if s.comment %}<div class="text-muted small">{{ s.comment }}</div>{% endif %}
           </td>
           <td><code class="small">{{ s.path }}</code></td>
-          <td>
+          <td class="text-nowrap">
             {% for p in protos %}
             {% set pclass = {
               'smb':'badge-primary', 'nfs':'badge-warning',
@@ -58,7 +58,7 @@
             </span>
             {% endif %}
           </td>
-          <td class="text-end pe-4">
+          <td class="text-end pe-4 text-nowrap">
             <button type="button" class="btn btn-sm btn-outline-secondary btn-icon me-1 share-paths-btn"
                     aria-label="Connection paths for {{ s.name }}"
                     data-bs-toggle="tooltip" title="Connection paths">
@@ -175,29 +175,20 @@
     });
 
     body.querySelectorAll('.copy-btn').forEach(btn => {
-      btn.addEventListener('click', function () {
+      btn.addEventListener('click', async function () {
         const idx  = parseInt(this.dataset.idx);
         const text = modalPaths[idx].path;
         const icon = this.querySelector('i');
-        const done = () => {
+        // Pass the modal body as container so the fallback textarea lands
+        // inside the focus trap.
+        const ok = await window.copyText(text, body);
+        if (ok) {
           icon.className = 'bi bi-check-lg text-success';
           showToast('Copied to clipboard', 'success');
           setTimeout(() => { icon.className = 'bi bi-copy'; }, 1600);
-        };
-        // Textarea must be inside the modal - Bootstrap's focus trap blocks
-        // focus() on elements outside it, which breaks execCommand('copy').
-        const syncCopy = () => {
-          const el = document.createElement('textarea');
-          el.value = text;
-          el.style.cssText = 'position:absolute;opacity:0;pointer-events:none;width:1px;height:1px';
-          body.appendChild(el);
-          el.focus(); el.select();
-          document.execCommand('copy');
-          el.remove(); done();
-        };
-        window.isSecureContext && navigator.clipboard
-          ? navigator.clipboard.writeText(text).then(done).catch(syncCopy)
-          : syncCopy();
+        } else {
+          showToast('Copy failed', 'danger');
+        }
       });
     });
   }

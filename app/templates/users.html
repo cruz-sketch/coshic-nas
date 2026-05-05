@@ -54,7 +54,7 @@
             {% endif %}
           </td>
           <td class="text-muted small">{{ u.created_at[:16] if u.created_at else '-' }}</td>
-          <td class="text-end pe-4">
+          <td class="text-end pe-4 text-nowrap">
             <a href="{{ url_for('user_edit', uid=u.id) }}"
                class="btn btn-sm btn-outline-primary btn-icon me-1"
                aria-label="Edit user {{ u.username }}"
