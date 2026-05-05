@@ -262,7 +262,7 @@ def login():
                            is_default_password=_is_admin_default())
 
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
 def logout():
     if session.get('logged_in'):
         _audit('logout', actor='admin')

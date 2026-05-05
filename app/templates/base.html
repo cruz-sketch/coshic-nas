@@ -69,11 +69,14 @@
       <h1 class="topbar-title">{% block page_title %}{% endblock %}</h1>
       <div class="topbar-actions">
         {% block header_actions %}{% endblock %}
-        <a href="{{ url_for('logout') }}" class="btn btn-sm btn-ghost-logout"
-           aria-label="Sign out"
-           data-bs-toggle="tooltip" data-bs-placement="bottom" title="Sign out">
-          <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
-        </a>
+        <form action="{{ url_for('logout') }}" method="post" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-ghost-logout"
+                  aria-label="Sign out"
+                  data-bs-toggle="tooltip" data-bs-placement="bottom" title="Sign out">
+            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+          </button>
+        </form>
       </div>
     </header>
 
