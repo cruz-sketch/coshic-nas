@@ -2,7 +2,7 @@
 
 A self-hosted NAS server running in Docker with a web-based management UI. Supports multiple file-sharing protocols, user access control, and macOS Time Machine backups.
 
-<img width="1600" height="847" alt="screenshot" src="https://github.com/user-attachments/assets/117a4b1a-f75e-429a-8b21-8f4cb6285e8c" />
+<img width="3412" height="1680" alt="Screenshot" src="https://github.com/user-attachments/assets/c7a60f62-271a-4c10-8f2b-4bb53a002d4b" />
 
 
 ## Features
@@ -40,6 +40,18 @@ git clone https://github.com/cruz-sketch/coshic-nas
 cd coshic-nas
 docker compose -f docker-compose-build.yml up -d --build
 ```
+
+## Create your first share (anonymous, writable)
+
+  A 30-second walkthrough: a public SMB share that anyone on the LAN can read and write to.
+
+  1. Open `http://<host>:8080` and log in (default password: `admin`).
+  2. Click **Add new shared folder** on the dashboard.
+  3. Enter a **Share Name** (e.g. `public`).
+  4. Turn on **Public share** (no authentication required).
+  5. Under **Protocols**, tick **SMB / CIFS**.
+  6. In the **SMB Options** that appear, turn on **Allow guest write**.
+  7. Click **Save**.
 
 ## Configuration
 
