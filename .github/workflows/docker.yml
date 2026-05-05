@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # QEMU enables cross-platform builds (arm64, armhf) on the amd64 runner.
       - name: Set up QEMU
