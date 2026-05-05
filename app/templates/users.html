@@ -4,7 +4,7 @@
 
 {% block header_actions %}
 <a href="{{ url_for('user_new') }}" class="btn btn-primary btn-sm">
-  <i class="bi bi-person-plus-fill me-1"></i>Add User
+  <i class="bi bi-person-plus-fill me-1" aria-hidden="true"></i>Add User
 </a>
 {% endblock %}
 
@@ -17,11 +17,11 @@
     <table class="table table-hover align-middle mb-0">
       <thead>
         <tr>
-          <th class="ps-4">Username</th>
-          <th>Status</th>
-          <th>Access</th>
-          <th>Created</th>
-          <th class="text-end pe-4">Actions</th>
+          <th class="ps-4" scope="col">Username</th>
+          <th scope="col">Status</th>
+          <th scope="col">Access</th>
+          <th scope="col">Created</th>
+          <th class="text-end pe-4" scope="col">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -29,42 +29,48 @@
         <tr>
           <td class="ps-4">
             <div class="d-flex align-items-center gap-3">
-              <div class="avatar">{{ u.username[0]|upper }}</div>
+              <div class="avatar" aria-hidden="true">{{ u.username[0]|upper }}</div>
               <span class="fw-semibold">{{ u.username }}</span>
             </div>
           </td>
           <td>
             {% if u.enabled %}
-            <span class="badge bg-success-subtle text-success border border-success-subtle">
-              <i class="bi bi-check-circle me-1"></i>Active
+            <span class="badge badge-soft badge-success">
+              <i class="bi bi-check-circle" aria-hidden="true"></i>Active
             </span>
             {% else %}
-            <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
-              <i class="bi bi-x-circle me-1"></i>Disabled
+            <span class="badge badge-soft badge-danger">
+              <i class="bi bi-x-circle" aria-hidden="true"></i>Disabled
             </span>
             {% endif %}
           </td>
           <td>
             {% if u.readonly %}
-            <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
-              <i class="bi bi-eye me-1"></i>Read-only
+            <span class="badge badge-soft badge-warning">
+              <i class="bi bi-eye" aria-hidden="true"></i>Read-only
             </span>
             {% else %}
-            <span class="badge bg-light text-muted border">Read/Write</span>
+            <span class="badge badge-soft badge-muted">Read/Write</span>
             {% endif %}
           </td>
           <td class="text-muted small">{{ u.created_at[:16] if u.created_at else '-' }}</td>
           <td class="text-end pe-4">
             <a href="{{ url_for('user_edit', uid=u.id) }}"
-               class="btn btn-sm btn-outline-primary me-1" title="Edit">
-              <i class="bi bi-pencil"></i>
+               class="btn btn-sm btn-outline-primary btn-icon me-1"
+               aria-label="Edit user {{ u.username }}"
+               data-bs-toggle="tooltip" title="Edit">
+              <i class="bi bi-pencil" aria-hidden="true"></i>
             </a>
             <form method="post" action="{{ url_for('user_delete', uid=u.id) }}"
                   class="d-inline"
-                  onsubmit="return confirm('Delete user «{{ u.username }}»? System account will be removed.')">
+                  data-confirm="Delete user «{{ u.username }}»? Their system account will be removed and they will lose access to all shares."
+                  data-confirm-title="Delete user?"
+                  data-confirm-label="Delete user">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
-                <i class="bi bi-trash"></i>
+              <button type="submit" class="btn btn-sm btn-outline-danger btn-icon"
+                      aria-label="Delete user {{ u.username }}"
+                      data-bs-toggle="tooltip" title="Delete">
+                <i class="bi bi-trash" aria-hidden="true"></i>
               </button>
             </form>
           </td>
@@ -76,11 +82,11 @@
 
   {% else %}
   <div class="card-body text-center py-5 text-muted">
-    <i class="bi bi-person-x" style="font-size:48px;opacity:.4"></i>
+    <i class="bi bi-person-x" style="font-size:48px;opacity:.4" aria-hidden="true"></i>
     <div class="mt-3 fw-semibold">No users yet</div>
     <div class="small mb-3">Add users so they can access SMB, FTP, SFTP, and WebDAV shares.</div>
     <a href="{{ url_for('user_new') }}" class="btn btn-primary">
-      <i class="bi bi-person-plus-fill me-1"></i>Add First User
+      <i class="bi bi-person-plus-fill me-1" aria-hidden="true"></i>Add First User
     </a>
   </div>
   {% endif %}

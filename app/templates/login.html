@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <title>Coshic NAS - Sign in</title>
   <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css"/>
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.css"/>
@@ -14,7 +15,7 @@
   <div class="login-card">
 
     <div class="login-logo">
-      <i class="bi bi-hdd-network-fill"></i>
+      <i class="bi bi-hdd-network-fill" aria-hidden="true"></i>
       <span>Coshic NAS</span>
     </div>
 
@@ -22,33 +23,34 @@
 
     {% if is_default_password %}
     <div class="alert alert-warning py-2 px-3 mb-3 small">
-      <i class="bi bi-shield-exclamation me-1"></i>
+      <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>
       Default password is in use. Sign in and change it in <strong>Settings</strong>.
     </div>
     {% endif %}
 
     {% if error %}
     <div class="alert alert-danger py-2 px-3 mb-3 small">
-      <i class="bi bi-exclamation-circle me-1"></i>{{ error }}
+      <i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i>{{ error }}
     </div>
     {% endif %}
 
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-4">
-        <label class="form-label fw-semibold">Password</label>
+        <label for="pwdField" class="form-label fw-semibold">Password</label>
         <div class="input-group">
           <input type="password" name="password" id="pwdField"
                  class="form-control form-control-lg"
                  autofocus autocomplete="current-password" required
                  placeholder="••••••••">
-          <button type="button" class="btn btn-outline-secondary" onclick="togglePwd()">
-            <i class="bi bi-eye" id="eyeIco"></i>
+          <button type="button" class="btn btn-outline-secondary" id="togglePwdBtn"
+                  aria-label="Show password">
+            <i class="bi bi-eye" id="eyeIco" aria-hidden="true"></i>
           </button>
         </div>
       </div>
       <button type="submit" class="btn btn-primary w-100 btn-lg">
-        <i class="bi bi-box-arrow-in-right me-2"></i>Sign in
+        <i class="bi bi-box-arrow-in-right me-2" aria-hidden="true"></i>Sign in
       </button>
     </form>
 
@@ -56,12 +58,17 @@
 </div>
 
 <script>
-function togglePwd() {
-  const f = document.getElementById('pwdField');
-  const i = document.getElementById('eyeIco');
-  f.type = f.type === 'password' ? 'text' : 'password';
-  i.className = f.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
-}
+(function () {
+  const btn = document.getElementById('togglePwdBtn');
+  const f   = document.getElementById('pwdField');
+  const i   = document.getElementById('eyeIco');
+  btn.addEventListener('click', () => {
+    const show = f.type === 'password';
+    f.type = show ? 'text' : 'password';
+    i.className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  });
+})();
 </script>
 </body>
 </html>

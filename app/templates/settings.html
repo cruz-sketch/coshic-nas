@@ -8,35 +8,35 @@
 
     <div class="card">
       <div class="card-header">
-        <i class="bi bi-key-fill me-2 text-primary"></i>Change Admin Password
+        <i class="bi bi-key-fill me-2 text-primary" aria-hidden="true"></i>Change Admin Password
       </div>
       <div class="card-body">
         {% if is_default_password %}
         <div class="alert alert-warning py-2 px-3 mb-3 small">
-          <i class="bi bi-shield-exclamation me-1"></i>
+          <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>
           You are still using the default password. Set a strong one below.
         </div>
         {% endif %}
         <form method="post" autocomplete="off">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
-            <label class="form-label fw-semibold">Current Password</label>
-            <input type="password" name="current_password" class="form-control"
+            <label for="curPwd" class="form-label fw-semibold">Current Password</label>
+            <input type="password" name="current_password" id="curPwd" class="form-control"
                    autocomplete="current-password" required placeholder="••••••••">
           </div>
           <div class="mb-3">
-            <label class="form-label fw-semibold">New Password</label>
-            <input type="password" name="new_password" class="form-control"
+            <label for="newPwd" class="form-label fw-semibold">New Password</label>
+            <input type="password" name="new_password" id="newPwd" class="form-control"
                    autocomplete="new-password" required placeholder="••••••••"
                    minlength="8">
           </div>
           <div class="mb-4">
-            <label class="form-label fw-semibold">Confirm New Password</label>
-            <input type="password" name="confirm_password" class="form-control"
+            <label for="confirmPwd" class="form-label fw-semibold">Confirm New Password</label>
+            <input type="password" name="confirm_password" id="confirmPwd" class="form-control"
                    autocomplete="new-password" required placeholder="••••••••">
           </div>
           <button type="submit" class="btn btn-primary w-100">
-            <i class="bi bi-check-lg me-2"></i>Change Password
+            <i class="bi bi-check-lg me-2" aria-hidden="true"></i>Change Password
           </button>
         </form>
       </div>
@@ -46,6 +46,80 @@
       </div>
     </div>
 
+    {# ── Maintenance ── #}
+    <div class="card mt-4">
+      <div class="card-header">
+        <i class="bi bi-tools me-2 text-primary" aria-hidden="true"></i>Maintenance
+      </div>
+      <div class="card-body">
+        <div class="d-flex align-items-start gap-3 mb-3">
+          <div class="stat-icon flex-shrink-0"
+               style="background:rgba(79,110,247,.15);color:var(--accent);width:40px;height:40px;font-size:18px"
+               aria-hidden="true">
+            <i class="bi bi-arrow-clockwise"></i>
+          </div>
+          <div>
+            <div class="fw-semibold">Reload service configs</div>
+            <div class="text-muted small mt-1">
+              Regenerates Samba, NFS, FTP, SFTP and WebDAV configs from the database
+              and restarts the running services.
+            </div>
+            <div class="text-muted small mt-2">
+              <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+              Configs are normally regenerated automatically on every change.
+              Use this only after editing the database manually, changing
+              <code>NAS_HOST</code> in <code>docker-compose.yml</code>, or to recover
+              from a service that is out of sync.
+            </div>
+          </div>
+        </div>
+        <div class="alert alert-warning py-2 px-3 small mb-3" role="alert">
+          <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+          Active SMB / FTP / SFTP / WebDAV connections will be briefly interrupted.
+        </div>
+        <button type="button" class="btn btn-outline-primary" id="reloadConfigsBtn">
+          <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Reload service configs
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const btn = document.getElementById('reloadConfigsBtn');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Reload service configs?',
+      body:  'This regenerates Samba, NFS, FTP, SFTP and WebDAV configs and restarts the running services. Active connections will be briefly interrupted.',
+      confirmLabel: 'Reload',
+      variant: 'primary',
+    });
+    if (!ok) return;
+
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Reloading…';
+    try {
+      const r = await fetch('/api/services/reload', { method: 'POST' });
+      const d = await r.json();
+      if (d.status === 'ok') {
+        showToast('Service configs reloaded', 'success');
+      } else {
+        showToast('Reload failed: ' + (d.message || 'unknown error'), 'danger');
+      }
+    } catch (e) {
+      showToast('Request failed: ' + e, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  });
+})();
+</script>
 {% endblock %}

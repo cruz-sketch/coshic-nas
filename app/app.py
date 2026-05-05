@@ -505,7 +505,8 @@ def audit_log():
     return render_template('audit.html',
                            rows=rows, page=page, pages=pages,
                            total=total, filt=filt,
-                           filters=_AUDIT_FILTERS)
+                           filters=_AUDIT_FILTERS,
+                           audit_max=db.AUDIT_MAX_ROWS)
 
 
 @app.route('/api/audit')

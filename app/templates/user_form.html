@@ -4,7 +4,7 @@
 
 {% block header_actions %}
 <a href="{{ url_for('users') }}" class="btn btn-sm btn-outline-secondary">
-  <i class="bi bi-arrow-left me-1"></i>Back
+  <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Back
 </a>
 {% endblock %}
 
@@ -19,14 +19,14 @@
   <div class="card-body">
 
     <div class="mb-3">
-      <label class="form-label fw-semibold">
-        Username <span class="text-danger">*</span>
+      <label for="usernameInput" class="form-label fw-semibold">
+        Username <span class="text-danger" aria-hidden="true">*</span>
       </label>
       {% if user %}
-      <input type="text" class="form-control" value="{{ user.username }}" readonly disabled>
+      <input type="text" class="form-control" id="usernameInput" value="{{ user.username }}" readonly disabled>
       <input type="hidden" name="username" value="{{ user.username }}">
       {% else %}
-      <input type="text" name="username" class="form-control" required
+      <input type="text" name="username" id="usernameInput" class="form-control" required
              pattern="[a-z][a-z0-9_\-]*" placeholder="e.g. alice"
              autocomplete="username">
       {% endif %}
@@ -36,17 +36,18 @@
     </div>
 
     <div class="mb-3">
-      <label class="form-label fw-semibold">
+      <label for="pwdInput" class="form-label fw-semibold">
         Password
-        {% if user %}<span class="text-muted fw-normal">(leave blank to keep current)</span>{% else %}<span class="text-danger">*</span>{% endif %}
+        {% if user %}<span class="text-muted fw-normal">(leave blank to keep current)</span>{% else %}<span class="text-danger" aria-hidden="true">*</span>{% endif %}
       </label>
       <div class="input-group">
         <input type="password" name="password" class="form-control"
                id="pwdInput"
                {{ 'required' if not user }}
                autocomplete="new-password" placeholder="••••••••">
-        <button type="button" class="btn btn-outline-secondary" onclick="togglePwd()">
-          <i class="bi bi-eye" id="eyeIcon"></i>
+        <button type="button" class="btn btn-outline-secondary" id="togglePwdBtn"
+                aria-label="Show password">
+          <i class="bi bi-eye" id="eyeIcon" aria-hidden="true"></i>
         </button>
       </div>
     </div>
@@ -56,9 +57,9 @@
              id="readonlySwitch" {{ 'checked' if user and user.readonly }}>
       <label class="form-check-label" for="readonlySwitch">
         <strong>Read-only account</strong>
-        <div class="text-muted small">
+        <span class="d-block text-muted small">
           Cannot write via SMB, FTP, or SFTP on any share
-        </div>
+        </span>
       </label>
     </div>
 
@@ -68,7 +69,7 @@
              id="enabledSwitch" {{ 'checked' if user.enabled }}>
       <label class="form-check-label" for="enabledSwitch">
         <strong>Account enabled</strong>
-        <div class="text-muted small">Disabling prevents login on all protocols</div>
+        <span class="d-block text-muted small">Disabling prevents login on all protocols</span>
       </label>
     </div>
     {% endif %}
@@ -77,7 +78,7 @@
 
   <div class="card-footer d-flex gap-2">
     <button type="submit" class="btn btn-primary">
-      <i class="bi bi-check-lg me-1"></i>{{ 'Save Changes' if user else 'Create User' }}
+      <i class="bi bi-check-lg me-1" aria-hidden="true"></i>{{ 'Save Changes' if user else 'Create User' }}
     </button>
     <a href="{{ url_for('users') }}" class="btn btn-outline-secondary">Cancel</a>
   </div>
@@ -90,16 +91,18 @@
 
 {% block scripts %}
 <script>
-function togglePwd() {
+(function () {
+  const btn = document.getElementById('togglePwdBtn');
   const inp = document.getElementById('pwdInput');
   const ico = document.getElementById('eyeIcon');
-  if (inp.type === 'password') {
-    inp.type = 'text';
-    ico.className = 'bi bi-eye-slash';
-  } else {
-    inp.type = 'password';
-    ico.className = 'bi bi-eye';
+  if (btn && inp && ico) {
+    btn.addEventListener('click', () => {
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      ico.className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    });
   }
-}
+})();
 </script>
 {% endblock %}
