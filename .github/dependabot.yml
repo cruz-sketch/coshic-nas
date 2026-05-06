@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Keeps SHA-pinned actions in workflows up to date. Dependabot rewrites
+  # both the SHA and the trailing `# vX.Y.Z` comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      docker-actions:
+        patterns:
+          - "docker/*"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
